@@ -20,7 +20,7 @@ FLUIDSYNTH_URL = (
     "https://github.com/FluidSynth/fluidsynth/releases/download/v2.6.1/"
     "fluidsynth-v2.6.1-win10-x64-cpp11.zip"
 )
-SOUNDFONT_URL = "https://raw.githubusercontent.com/craffel/pretty-midi/main/pretty_midi/TimGM6mb.sf2"
+SOUNDFONT_URL = ""
 
 
 def _roots(app_data: Path) -> list[Path]:
@@ -49,9 +49,15 @@ def _fluidsynth_dir(app_data: Path) -> Path | None:
 
 def _soundfont_path(app_data: Path) -> Path | None:
     for root in _roots(app_data):
-        path = root / "runtime" / "soundfonts" / "TimGM6mb.sf2"
+        path = root / "runtime" / "soundfonts" / "DreamSam 8202 (SPHE).sf2"
         if path.is_file() and path.stat().st_size > 100000:
             return path
+    for root in _roots(app_data):
+        sf_dir = root / "runtime" / "soundfonts"
+        if sf_dir.is_dir():
+            for sf in sf_dir.glob("*.sf2"):
+                if sf.is_file() and sf.stat().st_size > 100000:
+                    return sf
     return None
 
 
@@ -110,9 +116,9 @@ def ensure_native_runtime(app_data_dir: str | os.PathLike[str]) -> tuple[str | N
         errors.append(f"FluidSynth: {exc}")
 
     try:
-        if soundfont is None:
+        if soundfont is None and SOUNDFONT_URL:
             downloads.mkdir(parents=True, exist_ok=True)
-            soundfont = runtime / "soundfonts" / "TimGM6mb.sf2"
+            soundfont = runtime / "soundfonts" / "DreamSam 8202 (SPHE).sf2"
             soundfont.parent.mkdir(parents=True, exist_ok=True)
             _download(SOUNDFONT_URL, soundfont)
             if soundfont.stat().st_size <= 100000:

@@ -95,7 +95,7 @@ class PlaybackController(QObject):
             path = self.settings.get("soundfont")
             if not (path and os.path.isfile(path)):
                 d = self.db.default_soundfont()
-                path = d["path"] if d else None
+                path = d["path"] if (d and os.path.isfile(d.get("path", ""))) else None
             if not (path and os.path.isfile(path)):
                 try:
                     from app.services.runtime_bootstrap import _soundfont_path

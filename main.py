@@ -35,20 +35,25 @@ def main() -> int:
         QMessageBox.critical(None, "Unexpected error", f"{et.__name__}: {ev}")
     sys.excepthook = hook
 
+    docs_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+    app_docs_dir = os.path.join(docs_dir, "ShensuuOke")
     data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     try:
-        os.makedirs(data_dir, exist_ok=True)
-        target_db = os.path.join(data_dir, "library.db")
+        os.makedirs(app_docs_dir, exist_ok=True)
+        target_db = os.path.join(app_docs_dir, "library.db")
         if not os.path.exists(target_db):
             # Check for existing database from prior install and migrate seamlessly
+            prior_appdata_db = os.path.join(data_dir, "library.db")
             old_data_dir = os.path.join(os.path.dirname(data_dir), "KaraokePlayer")
             old_db = os.path.join(old_data_dir, "library.db")
-            if os.path.exists(old_db):
-                import shutil
-                try:
-                    shutil.copyfile(old_db, target_db)
-                except OSError:
-                    pass
+            for candidate in (prior_appdata_db, old_db):
+                if os.path.exists(candidate):
+                    import shutil
+                    try:
+                        shutil.copyfile(candidate, target_db)
+                        break
+                    except OSError:
+                        pass
         db = Database(target_db)
         db.clear_recently_played()
     except (DatabaseError, OSError) as e:
@@ -59,7 +64,13 @@ def main() -> int:
     _, _, soundfont_path, runtime_error = ensure_native_runtime(data_dir)
     if runtime_error:
         print(f"Native runtime setup warning: {runtime_error}", file=sys.stderr)
-    if soundfont_path and not db.default_soundfont():
+    # Clean up missing soundfonts from database and ensure default soundfont is valid
+    for sf in db.list_soundfonts():
+        if not os.path.isfile(sf["path"]):
+            db.remove_soundfont(sf["id"])
+
+    cur_sf = db.default_soundfont()
+    if soundfont_path and (not cur_sf or not os.path.isfile(cur_sf.get("path", ""))):
         soundfont_id = db.add_soundfont(soundfont_path)
         db.set_default_soundfont(soundfont_id)
 

@@ -69,7 +69,7 @@ run the manual checks above.
 | File shows "Missing" | It moved or its drive is disconnected; *Rescan* re-links moved files (matched by content) and keeps favorites/play counts. |
 | Reverb/chorus error message | Upgrade `pyfluidsynth` (`pip install -U pyfluidsynth`). |
 
-Data lives in `%APPDATA%\ShensuuOke\library.db`. Removing songs/folders/SoundFonts from the app never deletes the original files.
+Data lives in `%USERPROFILE%\Documents\ShensuuOke\library.db`. Removing songs/folders/SoundFonts from the app never deletes the original files.
 
 ## Packaging (optional)
 ```
