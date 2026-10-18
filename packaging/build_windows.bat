@@ -17,6 +17,24 @@ if not exist "%PYINSTALLER%" (
 set FFMPEG_BIN=runtime\ffmpeg
 set FLUIDSYNTH_BIN=runtime\fluidsynth
 if not exist "%FFMPEG_BIN%\ffmpeg.exe" (
+  if exist "%FFMPEG_BIN%\ffmpeg.zip" (
+    echo Unpacking %FFMPEG_BIN%\ffmpeg.zip...
+    powershell -Command "Expand-Archive -Path '%FFMPEG_BIN%\ffmpeg.zip' -DestinationPath '%FFMPEG_BIN%' -Force"
+  )
+)
+
+if not exist "runtime\soundfonts\DreamSam 8202 (SPHE).sf2" (
+  if exist "runtime\soundfonts\DreamSam.zip.part1" (
+    echo Unpacking DreamSam SoundFont from git parts...
+    if exist ".venv\Scripts\python.exe" (
+      .venv\Scripts\python.exe -c "import io, zipfile; data = open(r'runtime/soundfonts/DreamSam.zip.part1','rb').read() + open(r'runtime/soundfonts/DreamSam.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
+    ) else (
+      python -c "import io, zipfile; data = open(r'runtime/soundfonts/DreamSam.zip.part1','rb').read() + open(r'runtime/soundfonts/DreamSam.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
+    )
+  )
+)
+
+if not exist "%FFMPEG_BIN%\ffmpeg.exe" (
   echo Missing %FFMPEG_BIN%\ffmpeg.exe
   exit /b 1
 )

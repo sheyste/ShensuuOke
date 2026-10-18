@@ -4,5 +4,7 @@ __pycache__/
 build/
 dist/
 *.spec
-*.sf2
-/runtime
+# Ignore large extracted native binaries (>100MB) that exceed GitHub file size limits
+runtime/ffmpeg/ffmpeg.exe
+runtime/soundfonts/*.sf2
+runtime/downloads/

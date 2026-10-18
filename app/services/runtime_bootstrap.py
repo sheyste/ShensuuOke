@@ -31,7 +31,38 @@ def _roots(app_data: Path) -> list[Path]:
     return roots
 
 
+def _unpack_bundled_runtime(app_data: Path) -> None:
+    """Automatically reconstruct and unpack git-friendly compressed archives if binaries are not yet unpacked."""
+    import io
+    for root in _roots(app_data):
+        # 1. Unpack ffmpeg.exe if ffmpeg.zip exists
+        ff_dir = root / "runtime" / "ffmpeg"
+        ff_exe = ff_dir / "ffmpeg.exe"
+        ff_zip = ff_dir / "ffmpeg.zip"
+        if not ff_exe.is_file() and ff_zip.is_file():
+            try:
+                with zipfile.ZipFile(ff_zip) as z:
+                    z.extractall(ff_dir)
+            except Exception as e:
+                print(f"Notice: Failed to extract {ff_zip}: {e}", file=sys.stderr)
+
+        # 2. Unpack DreamSam SoundFont if split git parts exist
+        sf_dir = root / "runtime" / "soundfonts"
+        sf_file = sf_dir / "DreamSam 8202 (SPHE).sf2"
+        p1 = sf_dir / "DreamSam.zip.part1"
+        p2 = sf_dir / "DreamSam.zip.part2"
+        if not sf_file.is_file() and p1.is_file() and p2.is_file():
+            try:
+                with p1.open("rb") as f1, p2.open("rb") as f2:
+                    combined = f1.read() + f2.read()
+                with zipfile.ZipFile(io.BytesIO(combined)) as z:
+                    z.extractall(sf_dir)
+            except Exception as e:
+                print(f"Notice: Failed to unpack {sf_file}: {e}", file=sys.stderr)
+
+
 def _ffmpeg_path(app_data: Path) -> Path | None:
+    _unpack_bundled_runtime(app_data)
     for root in _roots(app_data):
         path = root / "runtime" / "ffmpeg" / "ffmpeg.exe"
         if path.is_file():
@@ -48,6 +79,7 @@ def _fluidsynth_dir(app_data: Path) -> Path | None:
 
 
 def _soundfont_path(app_data: Path) -> Path | None:
+    _unpack_bundled_runtime(app_data)
     for root in _roots(app_data):
         path = root / "runtime" / "soundfonts" / "DreamSam 8202 (SPHE).sf2"
         if path.is_file() and path.stat().st_size > 100000:
