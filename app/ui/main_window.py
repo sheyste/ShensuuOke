@@ -69,7 +69,7 @@ class HomePage(QWidget):
 
         if open_karaoke:
             karaoke_btn = QPushButton("🎤 Karaoke Screen")
-            karaoke_btn.setObjectName("primary")
+            karaoke_btn.setObjectName("karaoke_btn")
             karaoke_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             karaoke_btn.clicked.connect(open_karaoke)
             actions_box.addWidget(karaoke_btn)

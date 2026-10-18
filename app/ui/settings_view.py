@@ -54,7 +54,7 @@ class AudioSettingsView(QWidget):
         self.ctl.stop(); self.ctl.engine.test_tone(1.0)
 
     def _browse(self, edit, folder):
-        p = QFileDialog.getExistingDirectory(self, "Select folder") if folder else QFileDialog.getOpenFileName(self, "Select ffmpeg", "", "Executables (*.exe);;All (*)")[0]
+        p = pick_fast_directory(self, "Select folder", edit.text().strip()) if folder else QFileDialog.getOpenFileName(self, "Select ffmpeg", "", "Executables (*.exe);;All (*)")[0]
         if p: edit.setText(p)
 
     def _check(self):
@@ -65,19 +65,100 @@ class AudioSettingsView(QWidget):
         self.check.setText(ff + "\nFluidSynth is verified the first time a MIDI file is played.")
 
 
+def pick_fast_directory(parent, title="Select folder", initial_dir=""):
+    """Fast directory picker that avoids Windows Explorer freezing on folders with thousands of files.
+
+    Uses Qt's directory mode with ShowDirsOnly and DontUseNativeDialog to bypass Windows Shell
+    audio property handlers and thumbnail generators that cause Windows File Explorer to freeze.
+    """
+    dialog = QFileDialog(parent, title, initial_dir or "")
+    dialog.setFileMode(QFileDialog.FileMode.Directory)
+    dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+    dialog.setOption(QFileDialog.Option.DontResolveSymlinks, True)
+    dialog.setOption(QFileDialog.Option.DontUseCustomDirectoryIcons, True)
+    dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+    if dialog.exec() == QFileDialog.DialogCode.Accepted:
+        selected = dialog.selectedFiles()
+        if selected and selected[0]:
+            return os.path.normpath(selected[0])
+    return ""
+
+
+class FolderListWidget(QListWidget):
+    """QListWidget supporting drag-and-drop of folders directly from Windows File Explorer."""
+    def __init__(self, on_folder_dropped=None, parent=None):
+        super().__init__(parent)
+        self.on_folder_dropped = on_folder_dropped
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                p = url.toLocalFile()
+                if os.path.isdir(p):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                p = url.toLocalFile()
+                if os.path.isdir(p) and self.on_folder_dropped:
+                    self.on_folder_dropped(os.path.normpath(p))
+            event.acceptProposedAction()
+
+
 class AppSettingsView(QWidget):
     def __init__(self, db, settings, ctl, parent=None):
         super().__init__(parent)
         self.db, self.settings, self.ctl = db, settings, ctl
         self.w = None
         title = QLabel("Application Settings"); title.setObjectName("h1")
-        self.folders = QListWidget()
-        self.add_b = QPushButton("Add library folder…")
+
+        # Quick path input row
+        self.folder_input = QLineEdit()
+        self.folder_input.setPlaceholderText("Enter or paste folder path (e.g. D:\\Karaoke Songs)")
+        self.folder_input.returnPressed.connect(self._add_from_input)
+
+        self.add_b = QPushButton("Add folder…")
+        self.add_b.setToolTip("Browse and select a folder with fast directory picker")
+        self.add_b.clicked.connect(self._add)
+
+        self.add_direct_b = QPushButton("Add")
+        self.add_direct_b.setToolTip("Add folder from the path entered above")
+        self.add_direct_b.clicked.connect(self._add_from_input)
+
+        input_row = QHBoxLayout()
+        input_row.addWidget(self.folder_input, 1)
+        input_row.addWidget(self.add_b)
+        input_row.addWidget(self.add_direct_b)
+
+        self.folders = FolderListWidget(on_folder_dropped=self._add_folder_path)
+
+        tip_label = QLabel("💡 Tip: You can also drag & drop folders directly from File Explorer into the list above.")
+        tip_label.setObjectName("muted")
+
         self.rm_b = QPushButton("Remove folder")
         self.scan_b = QPushButton("Rescan library")
-        row = QHBoxLayout()
-        for b in (self.add_b, self.rm_b, self.scan_b): row.addWidget(b)
-        box = QGroupBox("Library folders (removing a folder never deletes files)"); bl = QVBoxLayout(box); bl.addWidget(self.folders); bl.addLayout(row)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.rm_b)
+        btn_row.addStretch()
+        btn_row.addWidget(self.scan_b)
+
+        box = QGroupBox("Library folders (removing a folder never deletes files)")
+        bl = QVBoxLayout(box)
+        bl.addLayout(input_row)
+        bl.addWidget(self.folders)
+        bl.addWidget(tip_label)
+        bl.addLayout(btn_row)
+
         self.video_folder = QLineEdit(settings.get("karaoke_video_folder"))
         self.video_folder.setPlaceholderText("Optional folder containing karaoke background videos")
         video_browse = QPushButton("Browse")
@@ -89,17 +170,40 @@ class AppSettingsView(QWidget):
         video_layout.addLayout(video_row)
         self.info = QLabel(f"Database: schema v{db.version}"); self.info.setObjectName("muted")
         lay = QVBoxLayout(self); lay.addWidget(title); lay.addWidget(box, 1); lay.addWidget(video_box); lay.addWidget(self.info)
-        self.add_b.clicked.connect(self._add); self.rm_b.clicked.connect(self._rm); self.scan_b.clicked.connect(self._rescan)
+        self.rm_b.clicked.connect(self._rm); self.scan_b.clicked.connect(self._rescan)
         video_browse.clicked.connect(self._browse_video_folder); video_save.clicked.connect(self._save_video_folder)
         self.refresh()
 
     def refresh(self):
         self.folders.clear(); self.folders.addItems(self.db.library_folders())
 
+    def _add_from_input(self):
+        p = self.folder_input.text().strip()
+        if not p:
+            return
+        if not os.path.isdir(p):
+            QMessageBox.warning(self, "Invalid Folder", f"The folder does not exist:\n{p}")
+            return
+        self.folder_input.clear()
+        self._add_folder_path(os.path.normpath(p))
+
+    def _add_folder_path(self, path):
+        if not path or not os.path.isdir(path):
+            return
+        p = os.path.normpath(path)
+        existing = [os.path.normpath(f) for f in self.db.library_folders()]
+        if p in existing:
+            self.info.setText(f"Folder already in library: {p}")
+            return
+        self.db.add_library_folder(p)
+        self.refresh()
+        self._run("folder", [p])
+
     def _add(self):
-        p = QFileDialog.getExistingDirectory(self, "Add library folder")
+        start = self.folder_input.text().strip()
+        p = pick_fast_directory(self, "Add library folder", start)
         if p:
-            self.db.add_library_folder(p); self.refresh(); self._run("folder", [p])
+            self._add_folder_path(p)
 
     def _rm(self):
         it = self.folders.currentItem()
@@ -109,7 +213,7 @@ class AppSettingsView(QWidget):
         self._run("rescan", [])
 
     def _browse_video_folder(self):
-        path = QFileDialog.getExistingDirectory(self, "Select karaoke background video folder", self.video_folder.text())
+        path = pick_fast_directory(self, "Select karaoke background video folder", self.video_folder.text())
         if path:
             self.video_folder.setText(path)
 
@@ -135,8 +239,9 @@ class AppSettingsView(QWidget):
         self.w.start()
 
     def _set_buttons_enabled(self, enabled: bool):
-        for b in (self.add_b, self.rm_b, self.scan_b):
+        for b in (self.add_b, self.add_direct_b, self.rm_b, self.scan_b):
             b.setEnabled(enabled)
+        self.folder_input.setEnabled(enabled)
 
     def _scan_done(self, res):
         self._set_buttons_enabled(True)

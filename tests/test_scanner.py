@@ -93,3 +93,27 @@ def test_app_settings_view_scan_progress(tmp_path):
     assert view.info.text() == "Added 1 song"
     assert view.scan_b.isEnabled()
     view.w.wait()
+
+
+def test_app_settings_view_add_folder(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from app.services.settings import Settings
+    from app.services.playback import PlaybackController
+    from app.ui.settings_view import AppSettingsView
+    app = QApplication.instance() or QApplication([])
+    d = Database()
+    s = Settings(d)
+    c = PlaybackController(d, s)
+    view = AppSettingsView(d, s, c)
+
+    # Adding via folder input
+    view.folder_input.setText(str(tmp_path))
+    view._add_from_input()
+    assert str(tmp_path) in d.library_folders()
+    if view.w:
+        view.w.wait()
+
+    # Adding duplicate
+    view._add_folder_path(str(tmp_path))
+    assert "Folder already in library" in view.info.text()
+
