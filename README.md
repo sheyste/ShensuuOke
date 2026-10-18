@@ -18,13 +18,6 @@ FileSource (FFmpeg-decoded float32 PCM)              ┘
 | Services | `app/services/` | `play_queue.py` (pure Python), `playback.py` (Qt controller), `scan_worker.py`, `settings.py` |
 | UI | `app/ui/` | main window, library, playlists, now playing + queue, lyrics, karaoke window, EQ, SoundFont manager, settings |
 
-Key decisions
-- **FluidSynth is used as a renderer, not as an audio driver.** Its built-in driver would bypass Python, making a real EQ impossible. We pull samples with `get_samples()` and drive notes from our own sequencer inside the audio callback.
-- **Tempo change without pitch change** is trivial for MIDI (the song clock runs faster/slower). It is **not available for audio/video files** (it would need a time-stretcher).
-- **Audio/video files are fully decoded into memory by FFmpeg** (~10 MB per minute of stereo 44.1 kHz float32). Seeking is exact and the audio callback never touches disk. Video files are played as audio only (no picture).
-- The audio callback never touches SQLite or disk. Scanning and decoding run in `QThread`s.
-- **SoundFont switching** loads the new `.sf2`, updates channel presets, then unloads the old one. If loading fails the previous SoundFont stays active.
-- **Not implemented:** the optional piano/MIDI activity visualization and the grid view of the library.
 
 ## Windows setup (Windows 10/11)
 
@@ -86,6 +79,16 @@ packaging\build_windows.bat
 Edit `FLUIDSYNTH_BIN` in the script to point at your FluidSynth `bin` folder; its DLLs are copied next to the executable
 and found automatically. FFmpeg is not bundled by default (see licenses below).
 
+## How to Build into Installable Package EXE?
+
+1. First run `packaging\build_windows.bat`.
+2. Wait until it finishes.
+3. Find `dist\ShensuuOke-Setup.exe`.
+4. Done!
+
+
+
+
 ## Third-party licenses (verify current terms before redistributing)
 
 | Component | License | Note |
@@ -98,3 +101,6 @@ and found automatically. FFmpeg is not bundled by default (see licenses below).
 | NumPy, SciPy | BSD-3-Clause | |
 | SQLite | Public domain | |
 | SoundFonts, karaoke files | Their own licenses | None are included; supply only media you may legally use. |
+
+
+
