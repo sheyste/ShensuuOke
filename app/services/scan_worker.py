@@ -28,7 +28,7 @@ class ScanWorker(QThread):
                 res = scanner.scan_folder(self.db, self.paths[0], progress=cb, cancel=stop,
                                           lazy=True)
             else:
-                res = scanner.rescan_library(self.db, progress=cb, cancel=stop)
+                res = scanner.rescan_library(self.db, progress=cb, cancel=stop, lazy=True)
             self.finished_scan.emit(res)
         except Exception as e:
             self.failed.emit(str(e))

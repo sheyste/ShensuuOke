@@ -47,6 +47,7 @@ class KaraokeWindow(QWidget):
         self.video_player = None
         self.video_audio = None
         self._video_index = -1
+        self._is_song_video = False
         if QGraphicsVideoItem is not None:
             self.video_view = _BackgroundVideoView(self._resize_video, self)
             self.video_view.setFrameStyle(0)
@@ -94,33 +95,48 @@ class KaraokeWindow(QWidget):
         info_lay.addWidget(self.title)
         info_lay.addWidget(self.next_song_lbl)
         info_lay.addWidget(self.queue_status_lbl)
+        info_lay.addStretch(1)
 
         heading = QWidget()
         heading.setStyleSheet("background:transparent;")
         heading_row = QHBoxLayout(heading)
         heading_row.setContentsMargins(14, 8, 14, 0)
-        heading_row.addWidget(info_box, 1)
+        heading_row.addWidget(info_box, 1, Qt.AlignmentFlag.AlignTop)
         heading_row.addStretch(1)
         self.remote_panel = RemotePanel(remote.url, compact=True) if remote else None
         if self.remote_panel:
             heading_row.addWidget(self.remote_panel, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
 
-        self.lyrics = LyricsView(settings.get("karaoke_font_size"), bottom_margin=48)
-        self.controls = QWidget(); self.controls.setStyleSheet("background:transparent;")
+        self.lyrics = LyricsView(settings.get("karaoke_font_size"), bottom_margin=48, settings=settings, ctl=ctl)
+        self.controls = QWidget(self)
+        self.controls.setStyleSheet("background:transparent;")
+        self.controls.setFixedHeight(56)
         row = QHBoxLayout(self.controls)
+        row.setContentsMargins(0, 0, 0, 8)
         btns = {"⏮": ctl.previous, "⏯": ctl.toggle_play_pause, "⏭": ctl.next, "A−": lambda: self._size(-6),
                 "A+": lambda: self._size(6), "Background…": self._bg, "Full screen (F11)": self.toggle_fullscreen, "Settings": self.settings_requested.emit}
         btns.pop(next((key for key in btns if key.startswith("Background")), ""), None)
         row.addStretch(1)
+        self.btn_font_dec = None
+        self.btn_font_inc = None
         for t, fn in btns.items():
-            b = QPushButton(t); b.clicked.connect(fn); b.setFocusPolicy(Qt.FocusPolicy.NoFocus); row.addWidget(b)
+            b = QPushButton(t); b.clicked.connect(fn); b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            if t == "A−":
+                self.btn_font_dec = b
+            elif t == "A+":
+                self.btn_font_inc = b
+            row.addWidget(b)
         row.addStretch(1)
         overlay = QWidget(self)
         self.overlay = overlay
         overlay.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         overlay.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(overlay)
-        lay.addWidget(heading); lay.addWidget(self.lyrics, 1); lay.addWidget(self.controls)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(heading, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addWidget(self.lyrics, 1)
+        lay.addWidget(self.controls, 0, Qt.AlignmentFlag.AlignBottom)
         stack = QStackedLayout(self)
         stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
         if self.video_view:
@@ -137,10 +153,48 @@ class KaraokeWindow(QWidget):
         self._sync_display()
 
     def _apply_bg(self, color):
-        self.setStyleSheet(f"QWidget {{ background:{color}; color:#fff; }} "
+        self.setStyleSheet(f"QWidget#kw {{ background:{color}; color:#fff; }} "
                            "QPushButton { background:#262833; border:1px solid #343747; border-radius:8px; padding:7px 14px; } "
                            "QPushButton:hover { background:#30334a; }")
         self.setObjectName("kw")
+
+    def _is_video_song(self, song: dict | None) -> bool:
+        if not song:
+            return False
+        path = song.get("path") or ""
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".mp4", ".mkv", ".avi", ".mov", ".webm"):
+            return True
+        fmt = (song.get("format") or "").upper()
+        return fmt in ("MP4", "MKV", "AVI", "MOV", "WEBM", "VIDEO")
+
+    def _play_song_video(self, song: dict):
+        if not self.video_player or not self.video:
+            return
+        path = song.get("path")
+        if not path or not os.path.isfile(path):
+            self.video_player.stop()
+            self.video_view.hide()
+            return
+        self._is_song_video = True
+        self.lyrics.setVisible(True)
+        self.lyrics.set_lyrics([], "")
+        if self.btn_font_dec:
+            self.btn_font_dec.setVisible(False)
+        if self.btn_font_inc:
+            self.btn_font_inc.setVisible(False)
+        self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        self.video_view.show()
+        self._resize_video()
+        url = QUrl.fromLocalFile(path)
+        if self.video_player.source() != url:
+            self.video_player.setSource(url)
+        self.video_player.setPosition(0)
+        if self.ctl.state == "playing":
+            self.video_player.play()
+        else:
+            self.video_player.pause()
+        self.overlay.raise_()
 
     def _video_status(self, status):
         if not self.video_player:
@@ -149,11 +203,22 @@ class KaraokeWindow(QWidget):
             self._resize_video()
             QTimer.singleShot(60, self._resize_video)
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self.video_player.setPosition(0)
-            self.video_player.play()
+            if not self._is_song_video:
+                self.video_player.setPosition(0)
+                self.video_player.play()
+            else:
+                self.video_player.pause()
 
     def _update_lyrics(self, position, _duration):
-        self.lyrics.set_position(position)
+        if not self._is_song_video:
+            self.lyrics.set_position(position)
+        elif self.video_player and self.ctl.state == "playing":
+            target_ms = int(position * 1000)
+            cur_ms = self.video_player.position()
+            if abs(cur_ms - target_ms) > 250:
+                self.video_player.setPosition(target_ms)
+            if self.video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self.video_player.play()
 
     def _format_song_title(self, song):
         if not song:
@@ -189,11 +254,36 @@ class KaraokeWindow(QWidget):
         is_active = self.ctl.state in ("playing", "paused", "loading")
         if self.ctl.current and is_active:
             self.title.setText(self._format_song_title(self.ctl.current))
-            self.lyrics.set_lyrics(self.ctl.current_lyrics, self.ctl.current_lyrics_message)
-            self.lyrics.set_position(self.ctl.engine.position)
+            if self._is_video_song(self.ctl.current):
+                self._is_song_video = True
+                self.lyrics.setVisible(True)
+                self.lyrics.set_lyrics([], "")
+                if self.btn_font_dec:
+                    self.btn_font_dec.setVisible(False)
+                if self.btn_font_inc:
+                    self.btn_font_inc.setVisible(False)
+            else:
+                self._is_song_video = False
+                self.lyrics.setVisible(True)
+                if self.btn_font_dec:
+                    self.btn_font_dec.setVisible(True)
+                if self.btn_font_inc:
+                    self.btn_font_inc.setVisible(True)
+                if self.video:
+                    self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+                self.lyrics.set_lyrics(self.ctl.current_lyrics, self.ctl.current_lyrics_message)
+                self.lyrics.set_position(self.ctl.engine.position)
         else:
             if not upcoming or self.ctl.state == "stopped":
                 self.title.setText("")
+                self._is_song_video = False
+                self.lyrics.setVisible(True)
+                if self.btn_font_dec:
+                    self.btn_font_dec.setVisible(True)
+                if self.btn_font_inc:
+                    self.btn_font_inc.setVisible(True)
+                if self.video:
+                    self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
                 self.lyrics.set_lyrics([], "Select a song")
         self._update_next_song()
         self._update_queue_status()
@@ -201,21 +291,64 @@ class KaraokeWindow(QWidget):
     def _on_state_changed(self, state):
         if state == "stopped":
             self._sync_display()
+            if self.video_player:
+                self.video_player.stop()
+                if self._is_song_video:
+                    self.video_view.hide()
+                    self._is_song_video = False
+                    self.lyrics.setVisible(True)
+                    if self.btn_font_dec:
+                        self.btn_font_dec.setVisible(True)
+                    if self.btn_font_inc:
+                        self.btn_font_inc.setVisible(True)
+                    if self.video:
+                        self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+            self.controls.setVisible(True)
+        elif state == "paused":
+            if self.video_player:
+                self.video_player.pause()
+            self.controls.setVisible(True)
+        elif state == "playing":
+            if self.video_player:
+                if self._is_song_video:
+                    if self.video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                        self.video_player.play()
+                elif self.video_player.source().isValid():
+                    if self.video_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                        self.video_player.play()
+        elif state == "loading":
+            if self.video_player and self._is_song_video:
+                self.video_player.pause()
+                self.video_player.setPosition(0)
+            self.controls.setVisible(True)
         self._update_queue_status()
 
     def _on_queue_changed(self):
         self._sync_display()
 
     def _on_song_changed(self, song):
-        if song and self.ctl.state != "stopped":
+        if song:
             self.title.setText(self._format_song_title(song))
             self._update_next_song()
             self._update_queue_status()
-            self._refresh_background_video(advance=True)
+            if self._is_video_song(song):
+                self._play_song_video(song)
+            else:
+                self._is_song_video = False
+                self.lyrics.setVisible(True)
+                if self.btn_font_dec:
+                    self.btn_font_dec.setVisible(True)
+                if self.btn_font_inc:
+                    self.btn_font_inc.setVisible(True)
+                if self.video:
+                    self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+                self._refresh_background_video(advance=True)
         else:
             self._sync_display()
 
     def _on_lyrics_changed(self, lyrics, msg):
+        if self._is_song_video:
+            return
         upcoming = self.ctl.queue.upcoming() if hasattr(self.ctl, "queue") else []
         is_active = self.ctl.state in ("playing", "paused", "loading")
         if not is_active and (not upcoming or self.ctl.state == "stopped"):
@@ -250,7 +383,7 @@ class KaraokeWindow(QWidget):
         self.video.setSize(QSizeF(width, height))
 
     def _refresh_background_video(self, advance=False):
-        if not self.video_player:
+        if not self.video_player or self._is_song_video:
             return
         folder = self.settings.get("karaoke_video_folder") or ""
         extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
@@ -264,6 +397,8 @@ class KaraokeWindow(QWidget):
                 self._video_index = (self._video_index + 1) % len(files)
             else:
                 self._video_index %= len(files)
+            if self.video:
+                self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
             self.video_view.show()
             self._resize_video()
             self.video_player.setSource(QUrl.fromLocalFile(files[self._video_index]))
@@ -290,7 +425,8 @@ class KaraokeWindow(QWidget):
         self.show()
         self.controls.setVisible(True)
         self._sync_display()
-        self._refresh_background_video()
+        if not self._is_song_video:
+            self._refresh_background_video()
         self._resize_video()
         QTimer.singleShot(60, self._resize_video)
         QTimer.singleShot(200, self._resize_video)
@@ -302,7 +438,8 @@ class KaraokeWindow(QWidget):
         self.show()
         self.controls.setVisible(True)
         self._sync_display()
-        self._refresh_background_video()
+        if not self._is_song_video:
+            self._refresh_background_video()
         self._resize_video()
         QTimer.singleShot(60, self._resize_video)
         QTimer.singleShot(200, self._resize_video)
@@ -325,9 +462,6 @@ class KaraokeWindow(QWidget):
         super().resizeEvent(event)
         self._resize_video()
         QTimer.singleShot(0, self._resize_video)
-
-    def mouseMoveEvent(self, e):
-        self.controls.setVisible(True)
 
     def keyPressEvent(self, e):
         k = e.key()

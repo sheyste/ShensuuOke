@@ -72,13 +72,16 @@ class LibraryView(QWidget):
         top = QHBoxLayout(); top.addWidget(self.search, 1); top.addWidget(QLabel("Sort:")); top.addWidget(self.sort_box); top.addWidget(self.order_b)
 
         self.up_b = QPushButton("Move up"); self.down_b = QPushButton("Move down")
+        self.clear_recent_b = QPushButton("Clear list")
         self.status = QLabel(""); self.status.setObjectName("muted")
         bar = QHBoxLayout()
-        for w in (self.up_b, self.down_b):
+        for w in (self.up_b, self.down_b, self.clear_recent_b):
             bar.addWidget(w)
         bar.addStretch(1); bar.addWidget(self.status)
         if mode != "playlist":
             self.up_b.hide(); self.down_b.hide()
+        if mode != "recent":
+            self.clear_recent_b.hide()
 
         self.model = SongTableModel()
         self.table = QTableView(); self.table.setModel(self.model)
@@ -104,8 +107,13 @@ class LibraryView(QWidget):
         self.table.doubleClicked.connect(self._double_click)
         self.table.customContextMenuRequested.connect(self._menu)
         self.up_b.clicked.connect(lambda: self._move(-1)); self.down_b.clicked.connect(lambda: self._move(1))
+        self.clear_recent_b.clicked.connect(self._clear_recent)
         ctl.library_changed.connect(self.reload)
         ctl.song_changed.connect(self._playing_changed)
+        self.reload()
+
+    def _clear_recent(self):
+        self.db.clear_recently_played()
         self.reload()
 
     # ---- data --------------------------------------------------------

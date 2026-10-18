@@ -104,3 +104,74 @@ def test_decoder_errors(tmp_path):
     with pytest.raises(DecodeError): decode_file(str(tmp_path / "nope.mp3"))
     f = tmp_path / "x.mp3"; f.write_bytes(b"junk")
     with pytest.raises(DecodeError): decode_file(str(f), ffmpeg="definitely-not-ffmpeg")
+
+
+def test_karaoke_window_video_handling(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt, QUrl
+    from app.library.database import Database
+    from app.services.settings import Settings
+    from app.services.playback import PlaybackController
+    from app.ui.karaoke_window import KaraokeWindow
+
+    app = QApplication.instance() or QApplication([])
+    d = Database()
+    s = Settings(d)
+    ctl = PlaybackController(d, s)
+    kw = KaraokeWindow(ctl, s)
+
+    sample_mp4 = tmp_path / "sample.mp4"
+    sample_mp4.write_bytes(b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2mp41")
+    sample_mid = tmp_path / "song.mid"
+    sample_mid.write_bytes(b"MThd")
+
+    ctl.state = "playing"
+
+    # 1. Video song
+    mp4_song = {"id": 1, "path": str(sample_mp4), "filename": "sample.mp4", "title": "Sample Video", "format": "MP4"}
+    kw._on_song_changed(mp4_song)
+
+    assert kw._is_song_video is True
+    assert not kw.lyrics.isHidden()
+    assert kw.lyrics.label.text() == ""
+    if kw.btn_font_dec:
+        assert kw.btn_font_dec.isHidden()
+    if kw.video:
+        assert kw.video.aspectRatioMode() == Qt.AspectRatioMode.KeepAspectRatio
+    if kw.video_player:
+        assert kw.video_player.source() == QUrl.fromLocalFile(str(sample_mp4))
+
+    # 2. Audio/MIDI song
+    midi_song = {"id": 2, "path": str(sample_mid), "filename": "song.mid", "title": "My MIDI", "format": "MID"}
+    kw._on_song_changed(midi_song)
+
+    assert kw._is_song_video is False
+    assert not kw.lyrics.isHidden()
+    if kw.video:
+        assert kw.video.aspectRatioMode() == Qt.AspectRatioMode.KeepAspectRatioByExpanding
+
+    # 3. Stop state
+    kw._on_state_changed("stopped")
+    assert kw._is_song_video is False
+    assert not kw.lyrics.isHidden()
+
+
+def test_recently_played_cleared_on_app_start():
+    from app.library.database import Database
+    from app.services.settings import Settings
+    from app.services.playback import PlaybackController
+    from app.ui.main_window import MainWindow
+
+    d = Database()
+    s = Settings(d)
+    ctl = PlaybackController(d, s)
+
+    sid, _ = d.upsert_song("/sample.mid", {"title": "Test", "filename": "sample.mid", "has_lyrics": 0})
+    d.record_play(sid)
+    assert len(d.list_songs(recent_only=True)) == 1
+
+    win = MainWindow(d, s, ctl)
+    assert len(d.list_songs(recent_only=True)) == 0
+    recent_page = win.pages[2]
+    assert len(recent_page.model.rows) == 0
+

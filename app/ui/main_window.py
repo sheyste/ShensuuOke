@@ -12,6 +12,7 @@ from app.ui.now_playing import NowPlayingBar, QueuePanel
 from app.services.remote_server import RemoteServer
 from PySide6.QtCore import QObject, Signal
 from app.ui.settings_view import AppSettingsView, AudioSettingsView
+from app.ui.lyrics_settings_view import LyricsSettingsView
 from app.ui.song_library import LibraryView
 from app.ui.soundfont_manager import SoundFontManager
 
@@ -92,6 +93,11 @@ class HomePage(QWidget):
         audio_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         audio_settings_btn.clicked.connect(lambda: go(5))
         actions_box.addWidget(audio_settings_btn)
+
+        lyrics_settings_btn = QPushButton("✨ Lyrics Settings")
+        lyrics_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        lyrics_settings_btn.clicked.connect(lambda: go(7))
+        actions_box.addWidget(lyrics_settings_btn)
 
         actions_box.addStretch(1)
         lay.addLayout(actions_box)
@@ -203,11 +209,12 @@ class _RemoteBridge(QObject):
 
 class MainWindow(QMainWindow):
     NAV = ["Home", "Song Library", "Recently Played", "SoundFont Manager", "Equalizer",
-           "Audio Settings", "Application Settings"]
+           "Audio Settings", "Application Settings", "Lyrics Settings"]
 
     def __init__(self, db, settings, ctl):
         super().__init__()
         self.db, self.settings, self.ctl = db, settings, ctl
+        self.db.clear_recently_played()
         self.setWindowTitle("ShensuuOke"); self.resize(1280, 800); self.setMinimumSize(900, 600)
         logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "icons", "logo.png")
         if os.path.exists(logo_path):
@@ -219,10 +226,10 @@ class MainWindow(QMainWindow):
                       LibraryView(db, settings, ctl, "library"),
                       LibraryView(db, settings, ctl, "recent"), SoundFontManager(db, settings, ctl),
                       EqualizerView(db, settings, ctl), AudioSettingsView(db, settings, ctl),
-                      AppSettingsView(db, settings, ctl)]
+                      AppSettingsView(db, settings, ctl), LyricsSettingsView(db, settings, ctl)]
         for p in self.pages: self.stack.addWidget(p)
 
-        self.queue_panel = QueuePanel(ctl); self.lyrics = LyricsView(22)
+        self.queue_panel = QueuePanel(ctl); self.lyrics = LyricsView(22, settings=settings, ctl=ctl)
         self.lyrics.set_lyrics([], "Nothing playing.")
         self.remote_bridge = _RemoteBridge(self)
         self.remote_bridge.queue_requested.connect(self._queue_from_remote)

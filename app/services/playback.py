@@ -190,9 +190,11 @@ class PlaybackController(QObject):
                 return True
             if kind in ("audio", "video"):
                 self.current = song
-                self.song_changed.emit(song)
-                self.lyrics_changed.emit([], "Lyrics are only available for MIDI/KAR files.")
                 self._set_state("loading")
+                self.song_changed.emit(song)
+                title = song.get("title") or song.get("filename") or "video"
+                msg = f"Playing video:\n{title}" if kind == "video" else "Lyrics are only available for MIDI/KAR files."
+                self.lyrics_changed.emit([], msg)
                 self._worker = _DecodeWorker(self._token, path, self.engine.sr,
                                              self.settings.get("ffmpeg_path"), self)
                 self._worker.done.connect(self._on_decoded)
@@ -217,7 +219,10 @@ class PlaybackController(QObject):
             self.error.emit(err)
             self._set_state("stopped")
             return
-        self._start(self.current, source, [], "Lyrics are only available for MIDI/KAR files.", announce=False)
+        is_vid = self.current and kind_of(self.current.get("path", "")) == "video"
+        title = (self.current or {}).get("title") or (self.current or {}).get("filename") or "video"
+        msg = f"Playing video:\n{title}" if is_vid else "Lyrics are only available for MIDI/KAR files."
+        self._start(self.current, source, [], msg, announce=False)
 
     def _start(self, song, source, lyrics, msg, announce=True):
         self.engine.load(source)

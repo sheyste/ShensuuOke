@@ -50,6 +50,7 @@ def main() -> int:
                 except OSError:
                     pass
         db = Database(target_db)
+        db.clear_recently_played()
     except (DatabaseError, OSError) as e:
         QMessageBox.critical(None, "Database error", str(e)); return 1
 

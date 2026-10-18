@@ -64,6 +64,12 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self._conn.execute("PRAGMA foreign_keys=ON")
+        if path != ":memory:":
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.Error:
+                pass
         self._migrate()
 
     # ---- infrastructure ---------------------------------------------
@@ -107,6 +113,22 @@ class Database:
     def get_song_by_path(self, path):
         return self._one("SELECT * FROM songs WHERE path=?", (path,))
 
+    def get_path_map(self, folder: str | None = None) -> dict[str, dict]:
+        """Return a mapping of path -> {id, path, size, mtime, missing, fingerprint}."""
+        with self._lock:
+            cursor = self._conn.execute("SELECT id, path, size, mtime, missing, fingerprint FROM songs")
+            rows = cursor.fetchall()
+            if not folder:
+                return {r["path"]: dict(r) for r in rows}
+            abs_folder = os.path.abspath(folder).lower()
+            res = {}
+            for r in rows:
+                p = r["path"]
+                abs_p = os.path.abspath(p).lower()
+                if abs_p == abs_folder or abs_p.startswith(abs_folder + os.sep):
+                    res[p] = dict(r)
+            return res
+
     def upsert_song(self, path: str, info: dict) -> tuple[int, bool]:
         vals = [info.get(f) for f in SONG_FIELDS]
         with self._lock, self._conn:
@@ -120,6 +142,37 @@ class Database:
                 f"INSERT INTO songs(path,{cols},added_at) VALUES(?,{','.join('?' * len(SONG_FIELDS))},?)",
                 [path] + vals + [time.time()])
             return cur.lastrowid, True
+
+    def save_songs_batch(self, to_insert: list[tuple[str, dict]], to_update: list[tuple[int, dict]]) -> tuple[int, int]:
+        """Batch insert and update songs in a single transaction.
+        to_insert: list of (path, info_dict)
+        to_update: list of (song_id, info_dict)
+        Returns (inserted_count, updated_count).
+        """
+        now = time.time()
+        cols = ",".join(SONG_FIELDS)
+        placeholders = ",".join("?" * len(SONG_FIELDS))
+        insert_sql = f"INSERT INTO songs(path,{cols},added_at) VALUES(?,{placeholders},?)"
+        sets = ",".join(f"{f}=?" for f in SONG_FIELDS)
+        update_sql = f"UPDATE songs SET {sets}, missing=0 WHERE id=?"
+
+        insert_params = []
+        for path, info in to_insert:
+            vals = [info.get(f) for f in SONG_FIELDS]
+            insert_params.append([path] + vals + [now])
+
+        update_params = []
+        for song_id, info in to_update:
+            vals = [info.get(f) for f in SONG_FIELDS]
+            update_params.append(vals + [song_id])
+
+        with self._lock, self._conn:
+            if insert_params:
+                self._conn.executemany(insert_sql, insert_params)
+            if update_params:
+                self._conn.executemany(update_sql, update_params)
+
+        return len(insert_params), len(update_params)
 
     def find_missing_by_fingerprint(self, fp):
         if not fp:
@@ -216,8 +269,24 @@ class Database:
     def record_play(self, song_id):
         self._run("UPDATE songs SET play_count=play_count+1, last_played=? WHERE id=?", (time.time(), song_id))
 
+    def clear_recently_played(self):
+        """Clear the recently played history by resetting last_played timestamps."""
+        self._run("UPDATE songs SET last_played=NULL")
+
     def set_missing(self, song_id, missing: bool):
         self._run("UPDATE songs SET missing=? WHERE id=?", (1 if missing else 0, song_id))
+
+    def set_missing_many(self, song_ids, missing: bool = True):
+        """Batch update missing flag for multiple songs."""
+        if not song_ids:
+            return
+        val = 1 if missing else 0
+        with self._lock, self._conn:
+            self._conn.executemany("UPDATE songs SET missing=? WHERE id=?", [(val, sid) for sid in song_ids])
+
+    def list_songs_paths_and_missing(self) -> list[dict]:
+        """Fast minimal retrieval of song ids, paths, and missing flags."""
+        return self._all("SELECT id, path, missing FROM songs")
 
     def remove_songs(self, song_ids):
         """Removes library rows only. Never touches files on disk."""

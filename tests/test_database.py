@@ -34,6 +34,9 @@ def test_favorites_recent_and_counts():
     d.record_play(a); d.record_play(b); d.record_play(b)
     assert d.get_song(b)["play_count"] == 2
     assert [s["id"] for s in d.list_songs(recent_only=True)][0] == b
+    d.clear_recently_played()
+    assert d.list_songs(recent_only=True) == []
+    assert d.get_song(b)["play_count"] == 2
 
 def test_remove_song_keeps_file(tmp_path):
     f = tmp_path / "s.mid"; f.write_bytes(b"x"); d = Database()

@@ -4,7 +4,7 @@ import os
 
 MIDI_EXT = {".mid", ".midi", ".kar"}
 AUDIO_EXT = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"}
-VIDEO_EXT = {".mp4", ".mkv", ".avi"}
+VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
 SUPPORTED_EXT = MIDI_EXT | AUDIO_EXT | VIDEO_EXT
 
 
