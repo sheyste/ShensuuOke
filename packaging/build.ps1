@@ -50,6 +50,10 @@ if (Test-Path "$rootDir\dist\ShensuuOke") {
     cmd /c "attrib -r -s -h `"$rootDir\dist\ShensuuOke`" /s /d & rmdir /s /q `"$rootDir\dist\ShensuuOke`""
 }
 
+# Auto-increment version on each build
+$versionStr = & "$rootDir\packaging\bump_version.ps1"
+Write-Host "Build Version: v$versionStr" -ForegroundColor Green
+
 $versionFile = "$rootDir\packaging\file_version_info.txt"
 $iconFile = "$rootDir\app\resources\icons\logo.ico"
 
@@ -80,16 +84,18 @@ if ($LASTEXITCODE -eq 0) {
         (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 
+    $installerPath = "$rootDir\dist\ShensuuOke-Setup-v$versionStr.exe"
     if ($iscc) {
-        Write-Host "`nBuilding Windows Setup Installer (ShensuuOke-Setup.exe)..." -ForegroundColor Cyan
-        & $iscc "$rootDir\packaging\installer.iss"
+        Write-Host "`nBuilding Windows Setup Installer (ShensuuOke-Setup-v$versionStr.exe)..." -ForegroundColor Cyan
+        & $iscc "/DMyAppVersion=$versionStr" "$rootDir\packaging\installer.iss"
     }
 
     Write-Host "`n==============================================================" -ForegroundColor Green
     Write-Host "  Build and Packaging Complete!" -ForegroundColor Green
+    Write-Host "  Version:          v$versionStr" -ForegroundColor Green
     Write-Host "  Standalone App:   $rootDir\dist\ShensuuOke\ShensuuOke.exe" -ForegroundColor Green
-    if (Test-Path "$rootDir\dist\ShensuuOke-Setup.exe") {
-        Write-Host "  Windows Installer: $rootDir\dist\ShensuuOke-Setup.exe" -ForegroundColor Green
+    if (Test-Path $installerPath) {
+        Write-Host "  Windows Installer: $installerPath" -ForegroundColor Green
     }
     Write-Host "==============================================================" -ForegroundColor Green
 } else {

@@ -1,6 +1,8 @@
-; Inno Setup Script for ShensuuOke Karaoke System
+﻿; Inno Setup Script for ShensuuOke Karaoke System
 #define MyAppName "ShensuuOke"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+#define MyAppVersion "1.0.1"
+#endif
 #define MyAppPublisher "Shensuu"
 #define MyAppExeName "ShensuuOke.exe"
 
@@ -13,7 +15,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=ShensuuOke-Setup
+OutputBaseFilename=ShensuuOke-Setup-v{#MyAppVersion}
 SetupIconFile=..\app\resources\icons\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max

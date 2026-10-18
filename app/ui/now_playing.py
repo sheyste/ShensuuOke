@@ -79,7 +79,12 @@ class NowPlayingBar(QFrame):
     def _song(self, song):
         if not song:
             self.title.setText("Nothing playing"); self.sub.setText(""); return
-        self.title.setText(song["title"] or song["filename"])
+        num = song.get("song_number")
+        if not num and hasattr(self.ctl, "db") and song.get("id"):
+            num = self.ctl.db.get_song_number(song["id"])
+            if num: song["song_number"] = num
+        t = song["title"] or song["filename"]
+        self.title.setText(f"#{num} - {t}" if num else t)
         self.sub.setText(" · ".join(x for x in (song.get("artist"), song.get("format")) if x))
         self.tempo.setEnabled(song["format"] in ("MID", "MIDI", "KAR"))
         self.tempo.setToolTip("Tempo changes (pitch unchanged) are available for MIDI/KAR files." )

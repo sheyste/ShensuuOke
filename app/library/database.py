@@ -108,10 +108,35 @@ class Database:
 
     # ---- songs -------------------------------------------------------
     def get_song(self, song_id):
+        sql = ("WITH numbered AS ("
+               "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
+               "FROM songs s WHERE s.missing=0) "
+               "SELECT * FROM numbered WHERE id=? LIMIT 1")
+        row = self._one(sql, (song_id,))
+        if row:
+            return row
         return self._one("SELECT * FROM songs WHERE id=?", (song_id,))
 
     def get_song_by_path(self, path):
+        sql = ("WITH numbered AS ("
+               "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
+               "FROM songs s WHERE s.missing=0) "
+               "SELECT * FROM numbered WHERE path=? LIMIT 1")
+        row = self._one(sql, (path,))
+        if row:
+            return row
         return self._one("SELECT * FROM songs WHERE path=?", (path,))
+
+    def get_song_number(self, song_id: int) -> int | None:
+        """Find a song's stable karaoke song number (1-based title order)."""
+        if not song_id:
+            return None
+        sql = ("WITH numbered AS ("
+               "SELECT s.id, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
+               "FROM songs s WHERE s.missing=0) "
+               "SELECT song_number FROM numbered WHERE id=? LIMIT 1")
+        row = self._one(sql, (int(song_id),))
+        return row["song_number"] if row else None
 
     def get_path_map(self, folder: str | None = None) -> dict[str, dict]:
         """Return a mapping of path -> {id, path, size, mtime, missing, fingerprint}."""

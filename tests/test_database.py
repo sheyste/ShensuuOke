@@ -124,3 +124,21 @@ def test_missing_songs_excluded_and_purged():
     assert purged == 1
     assert len(d.list_songs(include_missing=True)) == 2
     assert d.get_song(s2) is None
+
+
+def test_get_song_number_and_get_song_includes_number():
+    d = Database()
+    s_c, _ = d.upsert_song("/c.mid", info("Cherry"))
+    s_a, _ = d.upsert_song("/a.mid", info("Apple"))
+    s_b, _ = d.upsert_song("/b.mid", info("Banana"))
+
+    # Alphabetical order: Apple is 1, Banana is 2, Cherry is 3
+    assert d.get_song_number(s_a) == 1
+    assert d.get_song_number(s_b) == 2
+    assert d.get_song_number(s_c) == 3
+
+    # get_song also includes song_number
+    assert d.get_song(s_a)["song_number"] == 1
+    assert d.get_song(s_b)["song_number"] == 2
+    assert d.get_song(s_c)["song_number"] == 3
+

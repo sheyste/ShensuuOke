@@ -152,6 +152,10 @@ class PlaybackController(QObject):
     def play_song(self, song: dict) -> bool:
         self._token += 1
         self.engine.pause()
+        if song and not song.get("song_number") and song.get("id") and hasattr(self.db, "get_song_number"):
+            num = self.db.get_song_number(song["id"])
+            if num:
+                song["song_number"] = num
         path = song["path"]
         if not os.path.isfile(path):
             self.db.set_missing(song["id"], True)

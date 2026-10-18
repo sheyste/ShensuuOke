@@ -225,9 +225,15 @@ class KaraokeWindow(QWidget):
             return ""
         title = song.get("title") or song.get("filename") or ""
         artist = song.get("artist") or ""
-        if artist and artist.strip() and artist.lower() not in title.lower():
-            return f"{title} — {artist}"
-        return title
+        full = f"{title} — {artist}" if (artist and artist.strip() and artist.lower() not in title.lower()) else title
+        num = song.get("song_number")
+        if not num and hasattr(self.ctl, "db") and song.get("id"):
+            num = self.ctl.db.get_song_number(song["id"])
+            if num:
+                song["song_number"] = num
+        if num:
+            return f"#{num} - {full}"
+        return full
 
     def _update_next_song(self):
         upcoming = self.ctl.queue.upcoming() if hasattr(self.ctl, "queue") else []
