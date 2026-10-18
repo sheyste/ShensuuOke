@@ -117,3 +117,30 @@ def test_app_settings_view_add_folder(tmp_path):
     view._add_folder_path(str(tmp_path))
     assert "Folder already in library" in view.info.text()
 
+
+def test_rescan_updates_song_libraries_and_removes_missing(tmp_path):
+    make(tmp_path)
+    d = Database()
+    scanner.scan_folder(d, str(tmp_path), reader=fake_reader)
+    initial_songs = d.list_songs()
+    assert len(initial_songs) == 4
+    assert d.count_songs() == 4
+
+    # Delete one song from disk
+    os.remove(tmp_path / "a.mid")
+
+    # Rescan library
+    r = scanner.rescan_library(d, reader=fake_reader)
+    assert r.newly_missing == 1
+
+    # Songs listed in song libraries immediately exclude the missing song
+    updated_songs = d.list_songs()
+    assert len(updated_songs) == 3
+    assert d.count_songs() == 3
+    assert not any(s["path"].endswith("a.mid") for s in updated_songs)
+
+    # Purge permanently cleans them
+    purged = d.purge_missing_songs()
+    assert purged == 1
+    assert len(d.list_songs(include_missing=True)) == 3
+

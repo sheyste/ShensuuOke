@@ -120,12 +120,13 @@ class Database:
             rows = cursor.fetchall()
             if not folder:
                 return {r["path"]: dict(r) for r in rows}
-            abs_folder = os.path.abspath(folder).lower()
+            abs_folder = os.path.normcase(os.path.abspath(folder))
+            prefix = abs_folder if abs_folder.endswith(os.sep) else (abs_folder + os.sep)
             res = {}
             for r in rows:
                 p = r["path"]
-                abs_p = os.path.abspath(p).lower()
-                if abs_p == abs_folder or abs_p.startswith(abs_folder + os.sep):
+                abs_p = os.path.normcase(os.path.abspath(p))
+                if abs_p == abs_folder or abs_p.startswith(prefix):
                     res[p] = dict(r)
             return res
 
@@ -186,8 +187,10 @@ class Database:
         self._run(f"UPDATE songs SET path=?, {sets}, missing=0 WHERE id=?", [new_path] + vals + [song_id])
 
     def list_songs(self, search="", sort="title", descending=False, favorites_only=False,
-                   recent_only=False, limit=None, offset=None):
+                   recent_only=False, limit=None, offset=None, include_missing=False):
         where, params = [], []
+        if not include_missing:
+            where.append("s.missing=0")
         if search.strip():
             for term in search.split():
                 like = f"%{term.replace('%', '').replace('_', ' ')}%"
@@ -205,9 +208,10 @@ class Database:
             order = f"s.added_at {direction}, s.id {direction}"
         else:
             order = f"{SORT_COLUMNS.get(sort, SORT_COLUMNS['title'])} {direction}, s.id ASC"
+        numbered_filter = " WHERE s.missing=0" if not include_missing else ""
         sql = ("WITH numbered AS ("
-               "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
-               "FROM songs s) "
+               f"SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
+               f"FROM songs s{numbered_filter}) "
                "SELECT s.* FROM numbered s" +
                (" WHERE " + " AND ".join(where) if where else "") +
                f" ORDER BY {order}")
@@ -217,8 +221,16 @@ class Database:
                 sql += f" OFFSET {int(offset)}"
         return self._all(sql, params)
 
-    def count_songs(self):
-        return self._one("SELECT COUNT(*) AS n FROM songs")["n"]
+    def count_songs(self, include_missing=False):
+        if include_missing:
+            return self._one("SELECT COUNT(*) AS n FROM songs")["n"]
+        return self._one("SELECT COUNT(*) AS n FROM songs WHERE missing=0")["n"]
+
+    def purge_missing_songs(self) -> int:
+        """Permanently delete all songs flagged as missing from the database."""
+        with self._lock, self._conn:
+            cur = self._conn.execute("DELETE FROM songs WHERE missing=1")
+            return cur.rowcount
 
     def get_song_by_number(self, number: int):
         """Find a song by its stable karaoke song number (1-based title order)."""
@@ -226,7 +238,7 @@ class Database:
             return None
         sql = ("WITH numbered AS ("
                "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
-               "FROM songs s) "
+               "FROM songs s WHERE s.missing=0) "
                "SELECT * FROM numbered WHERE song_number=? LIMIT 1")
         return self._one(sql, (int(number),))
 
@@ -238,7 +250,7 @@ class Database:
         When browsing without a search query, results are shuffled so they are
         not presented in sequential number order.
         """
-        where, params = [], []
+        where, params = ["s.missing=0"], []
         if search.strip():
             for term in search.split():
                 like = f"%{term.replace('%', '').replace('_', ' ')}%"
@@ -257,7 +269,7 @@ class Database:
         )
         sql = ("WITH numbered AS ("
                "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
-               "FROM songs s) "
+               "FROM songs s WHERE s.missing=0) "
                "SELECT * FROM numbered s" +
                (" WHERE " + " AND ".join(where) if where else "") +
                f" ORDER BY {order_clause} LIMIT ? OFFSET ?")
@@ -347,12 +359,14 @@ class Database:
                 self._conn.execute("INSERT INTO playlist_songs(playlist_id,song_id,position) VALUES(?,?,?)",
                                    (pid, sid, pos))
 
-    def playlist_songs(self, pid):
+    def playlist_songs(self, pid, include_missing=False):
+        numbered_filter = " WHERE s.missing=0" if not include_missing else ""
+        missing_clause = " AND s.missing=0" if not include_missing else ""
         sql = ("WITH numbered AS ("
-               "SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
-               "FROM songs s) "
+               f"SELECT s.*, ROW_NUMBER() OVER (ORDER BY s.title COLLATE NOCASE, s.id ASC) AS song_number "
+               f"FROM songs s{numbered_filter}) "
                "SELECT s.*, ps.id AS entry_id, ps.position AS position FROM playlist_songs ps "
-               "JOIN numbered s ON s.id=ps.song_id WHERE ps.playlist_id=? ORDER BY ps.position")
+               f"JOIN numbered s ON s.id=ps.song_id WHERE ps.playlist_id=?{missing_clause} ORDER BY ps.position")
         return self._all(sql, (pid,))
 
     def playlist_remove(self, pid, entry_ids):
@@ -362,7 +376,7 @@ class Database:
         self._renumber(pid)
 
     def playlist_move(self, pid, entry_id, new_index):
-        ids = [r["entry_id"] for r in self.playlist_songs(pid)]
+        ids = [r["entry_id"] for r in self.playlist_songs(pid, include_missing=True)]
         if entry_id not in ids:
             return
         ids.remove(entry_id)
@@ -370,7 +384,7 @@ class Database:
         self._renumber(pid, ids)
 
     def _renumber(self, pid, ordered=None):
-        ordered = ordered or [r["entry_id"] for r in self.playlist_songs(pid)]
+        ordered = ordered or [r["entry_id"] for r in self.playlist_songs(pid, include_missing=True)]
         with self._lock, self._conn:
             self._conn.executemany("UPDATE playlist_songs SET position=? WHERE id=?",
                                    [(i, e) for i, e in enumerate(ordered)])

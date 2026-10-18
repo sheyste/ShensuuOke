@@ -323,6 +323,7 @@ def rescan_library(db, reader=read_metadata, progress=None, cancel=None, lazy=No
                             db.set_missing(sid, True)
         if result.cancelled:
             return result
+    refresh_missing(db, result)
     result.newly_missing = len(_missing_ids(db) - before)
     result.duplicate_groups = len(db.find_duplicates())
     return result

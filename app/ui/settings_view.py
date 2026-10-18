@@ -146,9 +146,12 @@ class AppSettingsView(QWidget):
         tip_label.setObjectName("muted")
 
         self.rm_b = QPushButton("Remove folder")
+        self.clean_b = QPushButton("Clean missing songs")
+        self.clean_b.setToolTip("Permanently purge database entries for files no longer on disk")
         self.scan_b = QPushButton("Rescan library")
         btn_row = QHBoxLayout()
         btn_row.addWidget(self.rm_b)
+        btn_row.addWidget(self.clean_b)
         btn_row.addStretch()
         btn_row.addWidget(self.scan_b)
 
@@ -170,7 +173,7 @@ class AppSettingsView(QWidget):
         video_layout.addLayout(video_row)
         self.info = QLabel(f"Database: schema v{db.version}"); self.info.setObjectName("muted")
         lay = QVBoxLayout(self); lay.addWidget(title); lay.addWidget(box, 1); lay.addWidget(video_box); lay.addWidget(self.info)
-        self.rm_b.clicked.connect(self._rm); self.scan_b.clicked.connect(self._rescan)
+        self.rm_b.clicked.connect(self._rm); self.clean_b.clicked.connect(self._clean_missing); self.scan_b.clicked.connect(self._rescan)
         video_browse.clicked.connect(self._browse_video_folder); video_save.clicked.connect(self._save_video_folder)
         self.refresh()
 
@@ -207,7 +210,24 @@ class AppSettingsView(QWidget):
 
     def _rm(self):
         it = self.folders.currentItem()
-        if it: self.db.remove_library_folder(it.text()); self.refresh()
+        if it:
+            folder_path = it.text()
+            self.db.remove_library_folder(folder_path)
+            folder_songs = self.db.get_path_map(folder_path)
+            if folder_songs:
+                self.db.remove_songs([s["id"] for s in folder_songs.values()])
+            self.refresh()
+            self.ctl.library_changed.emit()
+            self.info.setText(f"Removed folder from library: {folder_path}")
+
+    def _clean_missing(self):
+        from app.library import scanner
+        scanner.refresh_missing(self.db)
+        count = self.db.purge_missing_songs()
+        self.ctl.library_changed.emit()
+        self.info.setText(f"Cleaned {count} missing song(s) from database.")
+        QMessageBox.information(self, "Clean Missing Songs",
+                                f"Cleaned {count} missing song(s) from the library database.")
 
     def _rescan(self):
         self._run("rescan", [])
@@ -239,7 +259,7 @@ class AppSettingsView(QWidget):
         self.w.start()
 
     def _set_buttons_enabled(self, enabled: bool):
-        for b in (self.add_b, self.add_direct_b, self.rm_b, self.scan_b):
+        for b in (self.add_b, self.add_direct_b, self.rm_b, self.clean_b, self.scan_b):
             b.setEnabled(enabled)
         self.folder_input.setEnabled(enabled)
 

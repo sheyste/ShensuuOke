@@ -91,3 +91,36 @@ def test_stable_song_numbering():
     assert d.get_song_by_number(3)["title"] == "Cherry"
     assert d.get_song_by_number(0) is None
     assert d.get_song_by_number(4) is None
+
+
+def test_missing_songs_excluded_and_purged():
+    d = Database()
+    s1, _ = d.upsert_song("/a.mid", info("Song A"))
+    s2, _ = d.upsert_song("/b.mid", info("Song B"))
+    s3, _ = d.upsert_song("/c.mid", info("Song C"))
+
+    assert len(d.list_songs()) == 3
+    assert d.count_songs() == 3
+
+    # Mark Song B as missing
+    d.set_missing(s2, True)
+
+    # By default, list_songs and count_songs exclude missing songs
+    songs = d.list_songs()
+    assert len(songs) == 2
+    assert [s["title"] for s in songs] == ["Song A", "Song C"]
+    assert d.count_songs() == 2
+
+    # Include missing flag allows retrieving all
+    assert len(d.list_songs(include_missing=True)) == 3
+    assert d.count_songs(include_missing=True) == 3
+
+    # Stable numbering excludes missing songs
+    assert [(s["song_number"], s["title"]) for s in songs] == [(1, "Song A"), (2, "Song C")]
+    assert d.get_song_by_number(2)["title"] == "Song C"
+
+    # Purge permanently deletes missing songs
+    purged = d.purge_missing_songs()
+    assert purged == 1
+    assert len(d.list_songs(include_missing=True)) == 2
+    assert d.get_song(s2) is None

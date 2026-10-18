@@ -132,6 +132,10 @@ class LibraryView(QWidget):
         self.model.set_rows(rows)
         self.status.setText(f"{len(rows)} song{'s' if len(rows) != 1 else ''}")
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.reload()
+
     def _playing_changed(self, song):
         self.model.playing_id = song["id"] if song else None
         self.model.layoutChanged.emit()
