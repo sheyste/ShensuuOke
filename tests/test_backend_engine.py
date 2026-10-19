@@ -59,6 +59,17 @@ def test_events_channel_mute_volume_and_render():
     out = be.render(8); assert out.shape == (8, 2) and out.dtype == np.float32 and abs(out[0, 0] - 0.5) < 1e-6
     be.close(); assert ("delete",) in be._synth.calls
 
+def test_kick_drum_velocity_punch_boost():
+    be = backend()
+    be.set_bass_punch(0.8, drum_boost=True)
+    # Channel 9 (drums), Note 36 (Bass Drum / Kick) with standard moderate velocity (60)
+    be.send(NS(type="note_on", channel=9, note=36, velocity=60))
+    # Velocity should be boosted to trigger the hard punchy sample layer (> 90)
+    calls = [c for c in be._synth.calls if c[0] == "on" and c[1] == 9 and c[2] == 36]
+    assert len(calls) == 1
+    assert calls[0][3] > 90
+
+
 def test_missing_native_library_gives_clear_error():
     from app.audio.fluidsynth_backend import FluidSynthBackend, SynthError
     monkeypatch_target = sys.modules.pop("fluidsynth", None)

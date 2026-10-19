@@ -20,15 +20,25 @@ class SoundFontManager(QWidget):
         for b in (add_b, rm_b, def_b, use_b): row.addWidget(b)
 
         self.gain, self.reverb, self.chorus = QSlider(Qt.Orientation.Horizontal), QSlider(Qt.Orientation.Horizontal), QSlider(Qt.Orientation.Horizontal)
+        self.bass_punch = QSlider(Qt.Orientation.Horizontal)
         self.gain.setRange(0, 200); self.reverb.setRange(0, 100); self.chorus.setRange(0, 100)
+        self.bass_punch.setRange(0, 100)
         self.gain.setValue(int(settings.get("synth_gain") * 100)); self.reverb.setValue(int(settings.get("reverb_level") * 100))
         self.chorus.setValue(int(settings.get("chorus_level") * 10))
-        self.gl, self.rl, self.cl = QLabel(), QLabel(), QLabel()
+        self.bass_punch.setValue(int(settings.get("bass_punch", 0.75) * 100))
+        self.kick_boost_cb = QCheckBox("Kick Drum Dynamic Velocity Boost (triggers punchy hit layer)")
+        self.kick_boost_cb.setChecked(bool(settings.get("drum_boost", True)))
+
+        self.gl, self.rl, self.cl, self.pl = QLabel(), QLabel(), QLabel(), QLabel()
         fx = QGridLayout()
-        for r, (n, s, l) in enumerate((("Synth gain", self.gain, self.gl), ("Reverb level", self.reverb, self.rl), ("Chorus level", self.chorus, self.cl))):
+        for r, (n, s, l) in enumerate((("Synth gain", self.gain, self.gl),
+                                       ("Reverb level", self.reverb, self.rl),
+                                       ("Chorus level", self.chorus, self.cl),
+                                       ("Bass Drum Punch", self.bass_punch, self.pl))):
             fx.addWidget(QLabel(n), r, 0); fx.addWidget(s, r, 1); fx.addWidget(l, r, 2)
-        reset_b = QPushButton("Reset synthesizer settings"); fx.addWidget(reset_b, 3, 0, 1, 3)
-        fx_box = QGroupBox("Synthesizer"); fx_box.setLayout(fx)
+        fx.addWidget(self.kick_boost_cb, 4, 0, 1, 3)
+        reset_b = QPushButton("Reset synthesizer settings"); fx.addWidget(reset_b, 5, 0, 1, 3)
+        fx_box = QGroupBox("Synthesizer & Drum Dynamics"); fx_box.setLayout(fx)
 
         self.ch_sliders, self.ch_mutes = [], []
         grid = QGridLayout()
@@ -50,6 +60,7 @@ class SoundFontManager(QWidget):
         add_b.clicked.connect(self._add); rm_b.clicked.connect(self._remove); use_b.clicked.connect(self._use)
         def_b.clicked.connect(self._default); self.list.itemDoubleClicked.connect(lambda _: self._use())
         self.gain.valueChanged.connect(self._fx); self.reverb.valueChanged.connect(self._fx); self.chorus.valueChanged.connect(self._fx)
+        self.bass_punch.valueChanged.connect(self._fx); self.kick_boost_cb.toggled.connect(self._fx)
         reset_b.clicked.connect(self._reset)
         self._labels(); self.refresh()
 
@@ -95,15 +106,24 @@ class SoundFontManager(QWidget):
 
     def _labels(self):
         self.gl.setText(f"{self.gain.value() / 100:.2f}"); self.rl.setText(f"{self.reverb.value()}%"); self.cl.setText(f"{self.chorus.value() / 10:.1f}")
+        p = self.bass_punch.value()
+        self.pl.setText("Off" if p == 0 else f"{p}% (Punchy)")
 
     def _fx(self):
         self._labels()
         self.settings.set("synth_gain", self.gain.value() / 100); self.settings.set("reverb_level", self.reverb.value() / 100)
         self.settings.set("chorus_level", self.chorus.value() / 10)
+        punch = self.bass_punch.value() / 100.0
+        self.settings.set("bass_punch", punch)
+        self.settings.set("drum_boost", self.kick_boost_cb.isChecked())
+        if hasattr(self.ctl, "engine") and hasattr(self.ctl.engine, "eq"):
+            self.ctl.engine.eq.set_bass_punch(punch)
         self.ctl.apply_synth_fx()
 
     def _reset(self):
-        self.gain.setValue(50); self.reverb.setValue(40); self.chorus.setValue(15)
+        self.gain.setValue(65); self.reverb.setValue(40); self.chorus.setValue(15)
+        self.bass_punch.setValue(75)
+        self.kick_boost_cb.setChecked(True)
         for s, m in zip(self.ch_sliders, self.ch_mutes): s.setValue(100); m.setChecked(False)
         self._fx()
 

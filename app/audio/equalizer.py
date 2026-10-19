@@ -14,12 +14,13 @@ GAIN_MIN, GAIN_MAX = -12.0, 12.0
 BASS_FREQ, TREBLE_FREQ = 100.0, 8000.0
 
 BUILTIN_PRESETS = {
-    "Flat":       [0] * 10,
-    "Pop":        [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2],
-    "Rock":       [4, 3, 2, 0, -1, -1, 1, 3, 4, 4],
-    "Jazz":       [3, 2, 1, 2, -2, -2, 0, 1, 2, 3],
-    "Vocal":      [-3, -2, -1, 1, 3, 4, 4, 2, 0, -1],
-    "Bass Boost": [8, 7, 5, 3, 1, 0, 0, 0, 0, 0],
+    "Flat":         [0] * 10,
+    "Pop":          [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2],
+    "Rock":         [4, 3, 2, 0, -1, -1, 1, 3, 4, 4],
+    "Jazz":         [3, 2, 1, 2, -2, -2, 0, 1, 2, 3],
+    "Vocal":        [-3, -2, -1, 1, 3, 4, 4, 2, 0, -1],
+    "Bass Boost":   [8, 7, 5, 3, 1, 0, 0, 0, 0, 0],
+    "Punchy Bass":  [6, 5, 3, 0, -1, 0, 1, 2, 3, 3],
 }
 
 
@@ -57,6 +58,7 @@ class Equalizer:
         self.fs = sample_rate
         self.channels = channels
         self._lock = threading.Lock()
+        self.bass_punch = 0.0
         self.reset()
 
     # ---- parameters -------------------------------------------------
@@ -65,6 +67,7 @@ class Equalizer:
             self.gains = [0.0] * len(BAND_FREQS)
             self.bass_db = 0.0
             self.treble_db = 0.0
+            self.bass_punch = 0.0
             self.volume = 1.0
             self.balance = 0.0   # -1 (left only) .. +1 (right only)
             self.muted = False
@@ -90,6 +93,12 @@ class Equalizer:
                 self.treble_db = float(np.clip(treble_db, GAIN_MIN, GAIN_MAX))
             self._rebuild()
 
+    def set_bass_punch(self, punch: float):
+        """punch: 0.0 (off) to 1.0 (maximum punch)."""
+        with self._lock:
+            self.bass_punch = float(np.clip(punch, 0.0, 1.0))
+            self._rebuild()
+
     def set_volume(self, v: float):
         self.volume = float(np.clip(v, 0.0, 1.5))
 
@@ -103,6 +112,13 @@ class Equalizer:
         rows = [_row(*_peaking(f, g, self.fs)) for f, g in zip(BAND_FREQS, self.gains)]
         rows.append(_row(*_shelf(BASS_FREQ, self.bass_db, self.fs, high=False)))
         rows.append(_row(*_shelf(TREBLE_FREQ, self.treble_db, self.fs, high=True)))
+        if self.bass_punch > 0.001:
+            # 63 Hz kick drum punch peak (tight, focused thump)
+            punch_gain = self.bass_punch * 9.5
+            rows.append(_row(*_peaking(63.0, punch_gain, self.fs, q=1.6)))
+            # 280 Hz mud/boxiness scoop to keep kicks clear and tight
+            scoop_gain = -self.bass_punch * 2.5
+            rows.append(_row(*_peaking(280.0, scoop_gain, self.fs, q=1.4)))
         self._sos = np.array(rows, dtype=np.float64)
         if not hasattr(self, "_zi") or self._zi.shape[0] != len(rows):
             self._zi = np.zeros((len(rows), self.channels, 2))

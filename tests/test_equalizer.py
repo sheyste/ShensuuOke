@@ -42,3 +42,16 @@ def test_mute_balance_volume_and_limiter():
 def test_clamping_and_reset():
     eq = Equalizer(SR); eq.set_band(0, 99); assert eq.gains[0] == 12
     eq.reset(); assert eq.gains == [0.0] * 10
+
+def test_bass_punch_boost():
+    eq = Equalizer(SR)
+    eq.set_bass_punch(0.8)
+    in_63 = sine(63)
+    out_63 = eq.process(in_63)
+    # Bass punch at 63 Hz should produce substantial boost (> 2x voltage / +6 dB)
+    assert rms(out_63) / rms(in_63) > 2.0
+    # High mid at 1000 Hz should remain unaffected (< 3% change)
+    in_1k = sine(1000)
+    out_1k = eq.process(in_1k)
+    assert abs(rms(out_1k) / rms(in_1k) - 1.0) < 0.03
+

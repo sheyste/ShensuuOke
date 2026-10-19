@@ -62,6 +62,7 @@ class PlaybackController(QObject):
         self.engine.eq.set_gains(eq["gains"])
         self.engine.eq.set_tone(eq["bass"], eq["treble"])
         self.engine.eq.set_balance(eq["balance"])
+        self.engine.eq.set_bass_punch(float(eq.get("bass_punch", settings.get("bass_punch", 0.75))))
         self.engine.eq.set_volume(float(settings.get("volume")))
 
     # ---- audio device / synth ---------------------------------------
@@ -89,7 +90,9 @@ class PlaybackController(QObject):
     def ensure_synth(self) -> FluidSynthBackend:
         if self.synth is None:
             self.synth = FluidSynthBackend(self.engine.sr, self.settings.get("synth_gain"),
-                                           self.settings.get("fluidsynth_dll_dir") or None)
+                                           self.settings.get("fluidsynth_dll_dir") or None,
+                                           bass_punch=float(self.settings.get("bass_punch", 0.75)),
+                                           drum_boost=bool(self.settings.get("drum_boost", True)))
             self.apply_synth_fx()
         if self.synth.soundfont_path is None:
             path = self.settings.get("soundfont")
@@ -123,7 +126,9 @@ class PlaybackController(QObject):
     def ensure_synth_no_font(self):
         if self.synth is None:
             self.synth = FluidSynthBackend(self.engine.sr, self.settings.get("synth_gain"),
-                                           self.settings.get("fluidsynth_dll_dir") or None)
+                                           self.settings.get("fluidsynth_dll_dir") or None,
+                                           bass_punch=float(self.settings.get("bass_punch", 0.75)),
+                                           drum_boost=bool(self.settings.get("drum_boost", True)))
             self.apply_synth_fx()
         return self.synth
 
@@ -134,8 +139,10 @@ class PlaybackController(QObject):
             self.synth.set_gain(self.settings.get("synth_gain"))
             self.synth.set_reverb(level=self.settings.get("reverb_level"))
             self.synth.set_chorus(level=self.settings.get("chorus_level"))
+            self.synth.set_bass_punch(float(self.settings.get("bass_punch", 0.75)),
+                                      bool(self.settings.get("drum_boost", True)))
         except Exception as e:
-            self.error.emit(f"Could not apply reverb/chorus (pyfluidsynth too old?): {e}")
+            self.error.emit(f"Could not apply synth settings: {e}")
 
     # ---- transport ---------------------------------------------------
     def _set_state(self, s):

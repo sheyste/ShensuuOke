@@ -35,17 +35,20 @@ class EqualizerView(QWidget):
 
         def hslider(lo, hi): 
             s = QSlider(Qt.Orientation.Horizontal); s.setRange(lo, hi); return s
+        self.bass_punch = hslider(0, 100)
         self.bass, self.treble = hslider(-120, 120), hslider(-120, 120)
         self.balance, self.volume = hslider(-100, 100), hslider(0, 150)
-        self.vals = {k: QLabel() for k in ("bass", "treble", "balance", "volume")}
+        self.vals = {k: QLabel() for k in ("bass_punch", "bass", "treble", "balance", "volume")}
         tone = QGridLayout()
-        for r, (name, s, key) in enumerate((("Bass", self.bass, "bass"), ("Treble", self.treble, "treble"),
+        for r, (name, s, key) in enumerate((("Bass Drum Punch", self.bass_punch, "bass_punch"),
+                                            ("Bass", self.bass, "bass"), ("Treble", self.treble, "treble"),
                                             ("Balance L↔R", self.balance, "balance"), ("Master volume", self.volume, "volume"))):
             tone.addWidget(QLabel(name), r, 0); tone.addWidget(s, r, 1); tone.addWidget(self.vals[key], r, 2)
-        tone_box = QGroupBox("Tone, balance & volume"); tone_box.setLayout(tone)
+        tone_box = QGroupBox("Tone, balance, volume & punch"); tone_box.setLayout(tone)
 
         lay = QVBoxLayout(self); lay.addWidget(title); lay.addLayout(top); lay.addWidget(bands_box, 1); lay.addWidget(tone_box)
 
+        self.bass_punch.valueChanged.connect(self._punch)
         self.bass.valueChanged.connect(lambda v: self._tone("bass", v)); self.treble.valueChanged.connect(lambda v: self._tone("treble", v))
         self.balance.valueChanged.connect(self._balance); self.volume.valueChanged.connect(self._volume)
         self.mute.toggled.connect(self.eq.set_muted)
@@ -61,6 +64,7 @@ class EqualizerView(QWidget):
         self._loading = True
         for i, g in enumerate(self.eq.gains):
             self.band_sliders[i].setValue(round(g * 10)); self.band_labels[i].setText(f"{g:+.1f} dB")
+        self.bass_punch.setValue(round(getattr(self.eq, "bass_punch", 0.75) * 100))
         self.bass.setValue(round(self.eq.bass_db * 10)); self.treble.setValue(round(self.eq.treble_db * 10))
         self.balance.setValue(round(self.eq.balance * 100)); self.volume.setValue(round(self.eq.volume * 100))
         self.mute.setChecked(self.eq.muted)
@@ -68,9 +72,21 @@ class EqualizerView(QWidget):
         self._tone_labels()
 
     def _tone_labels(self):
+        p = self.bass_punch.value()
+        self.vals["bass_punch"].setText("Off" if p == 0 else f"{p}% (Punchy)")
         self.vals["bass"].setText(f"{self.bass.value() / 10:+.1f} dB"); self.vals["treble"].setText(f"{self.treble.value() / 10:+.1f} dB")
         b = self.balance.value(); self.vals["balance"].setText("Center" if b == 0 else f"{'R' if b > 0 else 'L'} {abs(b)}%")
         self.vals["volume"].setText(f"{self.volume.value()}%")
+
+    def _punch(self, v):
+        self._tone_labels()
+        if not self._loading:
+            p = v / 100.0
+            self.eq.set_bass_punch(p)
+            self.settings.set("bass_punch", p)
+            if hasattr(self, "ctl") and getattr(self.ctl, "synth", None):
+                self.ctl.synth.set_bass_punch(p)
+            self._changed()
 
     def _band(self, i, v):
         self.band_labels[i].setText(f"{v / 10:+.1f} dB")
@@ -95,7 +111,9 @@ class EqualizerView(QWidget):
 
     def _persist(self):
         self.settings.set("eq", {"gains": self.eq.gains, "bass": self.eq.bass_db, "treble": self.eq.treble_db,
-                                 "balance": self.eq.balance, "preset": self.preset.currentText()})
+                                 "balance": self.eq.balance, "bass_punch": getattr(self.eq, "bass_punch", 0.75),
+                                 "preset": self.preset.currentText()})
+        self.settings.set("bass_punch", getattr(self.eq, "bass_punch", 0.75))
 
     # ---- presets -----------------------------------------------------
     def _all_presets(self):
@@ -146,4 +164,12 @@ class EqualizerView(QWidget):
         self.db.delete_eq_preset(self._current_name()); self._refresh_presets("Flat")
 
     def _reset(self):
-        self.eq.reset(); self.settings.set("volume", self.eq.volume); self._refresh_presets("Flat"); self._sync_from_eq(); self._persist()
+        self.eq.reset()
+        self.eq.set_bass_punch(0.75)
+        self.settings.set("bass_punch", 0.75)
+        if hasattr(self, "ctl") and getattr(self.ctl, "synth", None):
+            self.ctl.synth.set_bass_punch(0.75)
+        self.settings.set("volume", self.eq.volume)
+        self._refresh_presets("Flat")
+        self._sync_from_eq()
+        self._persist()

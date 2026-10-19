@@ -39,17 +39,25 @@ def _import_fluidsynth(dll_dir: str | None):
 
 
 class FluidSynthBackend:
-    def __init__(self, sample_rate: int = 44100, gain: float = 0.5, dll_dir: str | None = None):
+    def __init__(self, sample_rate: int = 44100, gain: float = 0.65, dll_dir: str | None = None,
+                 bass_punch: float = 0.75, drum_boost: bool = True):
         fs = _import_fluidsynth(dll_dir)
         self.sample_rate = sample_rate
         self._lock = threading.RLock()
         self._synth = fs.Synth(gain=gain, samplerate=float(sample_rate))
+        try:
+            self._synth.setting("synth.polyphony", 256)
+        except Exception:
+            pass
         self.gain = gain
+        self.bass_punch = float(np.clip(bass_punch, 0.0, 1.0))
+        self.drum_boost = bool(drum_boost)
         self.soundfont_path: str | None = None
         self._sfid: int | None = None
         self.channel_scale = [1.0] * 16     # per-channel volume multiplier (applied to CC7)
         self.channel_muted = [False] * 16
         self._last_cc7 = [100] * 16
+        self._programs: dict[int, int] = {}
 
     # ---- soundfonts --------------------------------------------------
     def load_soundfont(self, path: str) -> None:
@@ -69,6 +77,12 @@ class FluidSynthBackend:
             self.all_sounds_off()
 
     # ---- settings ----------------------------------------------------
+    def set_bass_punch(self, punch: float, drum_boost: bool | None = None):
+        with self._lock:
+            self.bass_punch = float(np.clip(punch, 0.0, 1.0))
+            if drum_boost is not None:
+                self.drum_boost = bool(drum_boost)
+
     def set_gain(self, gain: float):
         with self._lock:
             self.gain = float(np.clip(gain, 0.0, 5.0))
@@ -128,6 +142,24 @@ class FluidSynthBackend:
                         if velocity <= 0:
                             self._synth.noteoff(ch, note)
                         else:
+                            if self.drum_boost and self.bass_punch > 0.01:
+                                if ch == 9:
+                                    # Channel 10 (drums): 35 Acoustic Bass Drum, 36 Bass Drum 1 (Kick)
+                                    if note in (35, 36):
+                                        factor = 1.0 + 0.35 * self.bass_punch
+                                        base_add = int(25 * self.bass_punch)
+                                        velocity = min(127, max(1, int(velocity * factor + base_add)))
+                                    elif note in (38, 40):  # Snare punch
+                                        factor = 1.0 + 0.15 * self.bass_punch
+                                        base_add = int(10 * self.bass_punch)
+                                        velocity = min(127, max(1, int(velocity * factor + base_add)))
+                                else:
+                                    # Non-drum channel: check if bass instrument (GM 32..39)
+                                    prog = self._programs.get(ch)
+                                    if prog is not None and 32 <= prog <= 39:
+                                        factor = 1.0 + 0.20 * self.bass_punch
+                                        base_add = int(12 * self.bass_punch)
+                                        velocity = min(127, max(1, int(velocity * factor + base_add)))
                             self._synth.noteon(ch, note, min(127, max(1, velocity)))
                 elif t == "note_off":
                     note = int(getattr(msg, "note", 60))
@@ -145,6 +177,7 @@ class FluidSynthBackend:
                 elif t == "program_change":
                     prog = int(getattr(msg, "program", 0))
                     if 0 <= prog <= 127:
+                        self._programs[ch] = prog
                         self._synth.program_change(ch, prog)
                 elif t == "pitchwheel":
                     pitch = int(getattr(msg, "pitch", 0))
