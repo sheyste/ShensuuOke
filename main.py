@@ -70,9 +70,10 @@ def main() -> int:
             db.remove_soundfont(sf["id"])
 
     cur_sf = db.default_soundfont()
-    if soundfont_path and (not cur_sf or not os.path.isfile(cur_sf.get("path", ""))):
+    if soundfont_path and os.path.isfile(soundfont_path):
         soundfont_id = db.add_soundfont(soundfont_path)
-        db.set_default_soundfont(soundfont_id)
+        if not cur_sf or not os.path.isfile(cur_sf.get("path", "")) or "dreamsam" in cur_sf.get("path", "").lower():
+            db.set_default_soundfont(soundfont_id)
 
     settings = Settings(db)
     ctl = PlaybackController(db, settings)

@@ -23,11 +23,11 @@ if ((-not (Test-Path $ffmpegExe)) -and (Test-Path $ffmpegZip)) {
     Expand-Archive -Path $ffmpegZip -DestinationPath "$rootDir\runtime\ffmpeg" -Force
 }
 
-$sfFile = "$rootDir\runtime\soundfonts\DreamSam 8202 (SPHE).sf2"
-$p1 = "$rootDir\runtime\soundfonts\DreamSam.zip.part1"
-$p2 = "$rootDir\runtime\soundfonts\DreamSam.zip.part2"
+$sfFile = "$rootDir\runtime\soundfonts\KaraOke_King_v2.sf2"
+$p1 = "$rootDir\runtime\soundfonts\KaraOke_King_v2.zip.part1"
+$p2 = "$rootDir\runtime\soundfonts\KaraOke_King_v2.zip.part2"
 if ((-not (Test-Path $sfFile)) -and (Test-Path $p1) -and (Test-Path $p2)) {
-    Write-Host "Unpacking DreamSam SoundFont from git parts..." -ForegroundColor Cyan
+    Write-Host "Unpacking KaraOke_King_v2 SoundFont from git parts..." -ForegroundColor Cyan
     $py = if (Test-Path "$rootDir\.venv\Scripts\python.exe") { "$rootDir\.venv\Scripts\python.exe" } else { "python" }
     & $py -c "import io, zipfile; data = open(r'$p1','rb').read() + open(r'$p2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'$rootDir\runtime\soundfonts')"
 }

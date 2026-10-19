@@ -171,11 +171,13 @@ class LyricsView(QWidget):
                 sing_dur = min(gap, max(0.35, len(e.text) * 0.25)) if gap > 1.8 else gap
             else:
                 if line_idx + 1 < len(self.lines):
-                    gap = max(0.01, self.lines[line_idx + 1][0].time - s_start)
-                    sing_dur = min(max(0.4, gap), max(0.4, len(e.text) * 0.35))
+                    gap = max(0.05, self.lines[line_idx + 1][0].time - s_start)
+                    # Finish the fill slightly before the next line takes over,
+                    # so the last word sweeps smoothly instead of snapping full.
+                    sing_dur = min(gap * 0.92, max(0.4, len(e.text) * 0.35))
                 else:
                     sing_dur = max(0.4, len(e.text) * 0.35)
-            s_end = s_start + sing_dur
+            s_end = s_start + max(0.05, sing_dur)
             syl_data.append((cum_w, sw, s_start, s_end))
             cum_w += sw
 
@@ -393,10 +395,13 @@ class LyricsView(QWidget):
 
         # 2. Blit highlight line clipped to progress_x
         if is_active and progress_x > 0.0:
-            clip_w = min(float(pix_hl.width()), progress_x + pad_x)
-            dest_rect = QRectF(draw_x, draw_y, clip_w, pix_h)
-            source_rect = QRectF(0, 0, clip_w, pix_h)
-            painter.drawPixmap(dest_rect, pix_hl, source_rect)
+            # Clip in logical coordinates (DPI-safe) instead of using a source
+            # rect, which is in device pixels and distorts on scaled displays.
+            clip_w = progress_x + pad_x
+            painter.save()
+            painter.setClipRect(QRectF(draw_x, draw_y, clip_w, pix_h), Qt.ClipOperation.IntersectClip)
+            painter.drawPixmap(int(round(draw_x)), int(round(draw_y)), pix_hl)
+            painter.restore()
 
         if scale < 1.0:
             painter.restore()

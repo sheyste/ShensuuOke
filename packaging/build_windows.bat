@@ -23,13 +23,13 @@ if not exist "%FFMPEG_BIN%\ffmpeg.exe" (
   )
 )
 
-if not exist "runtime\soundfonts\DreamSam 8202 (SPHE).sf2" (
-  if exist "runtime\soundfonts\DreamSam.zip.part1" (
-    echo Unpacking DreamSam SoundFont from git parts...
+if not exist "runtime\soundfonts\KaraOke_King_v2.sf2" (
+  if exist "runtime\soundfonts\KaraOke_King_v2.zip.part1" (
+    echo Unpacking KaraOke_King_v2 SoundFont from git parts...
     if exist ".venv\Scripts\python.exe" (
-      .venv\Scripts\python.exe -c "import io, zipfile; data = open(r'runtime/soundfonts/DreamSam.zip.part1','rb').read() + open(r'runtime/soundfonts/DreamSam.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
+      .venv\Scripts\python.exe -c "import io, zipfile; data = open(r'runtime/soundfonts/KaraOke_King_v2.zip.part1','rb').read() + open(r'runtime/soundfonts/KaraOke_King_v2.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
     ) else (
-      python -c "import io, zipfile; data = open(r'runtime/soundfonts/DreamSam.zip.part1','rb').read() + open(r'runtime/soundfonts/DreamSam.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
+      python -c "import io, zipfile; data = open(r'runtime/soundfonts/KaraOke_King_v2.zip.part1','rb').read() + open(r'runtime/soundfonts/KaraOke_King_v2.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
     )
   )
 )
