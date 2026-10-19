@@ -114,7 +114,7 @@ class KaraokeWindow(QWidget):
         row = QHBoxLayout(self.controls)
         row.setContentsMargins(0, 0, 0, 8)
         btns = {"⏮": ctl.previous, "⏯": ctl.toggle_play_pause, "⏭": ctl.next, "A−": lambda: self._size(-6),
-                "A+": lambda: self._size(6), "Background…": self._bg, "Full screen (F11)": self.toggle_fullscreen, "Settings": self.settings_requested.emit}
+                "A+": lambda: self._size(6), "Background…": self._bg, "Full screen (F11)": self.toggle_fullscreen, "Menu": self.settings_requested.emit}
         btns.pop(next((key for key in btns if key.startswith("Background")), ""), None)
         row.addStretch(1)
         self.btn_font_dec = None
@@ -277,11 +277,18 @@ class KaraokeWindow(QWidget):
                     self.btn_font_inc.setVisible(True)
                 if self.video:
                     self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+                num = self.ctl.current.get("song_number")
+                if not num and hasattr(self.ctl, "db") and self.ctl.current.get("id"):
+                    num = self.ctl.db.get_song_number(self.ctl.current["id"])
+                self.lyrics.set_song_info(self.ctl.current.get("title") or self.ctl.current.get("filename") or "",
+                                         self.ctl.current.get("artist") or "",
+                                         num)
                 self.lyrics.set_lyrics(self.ctl.current_lyrics, self.ctl.current_lyrics_message)
                 self.lyrics.set_position(self.ctl.engine.position)
         else:
             if not upcoming or self.ctl.state == "stopped":
                 self.title.setText("")
+                self.lyrics.set_song_info("", "", None)
                 self._is_song_video = False
                 self.lyrics.setVisible(True)
                 if self.btn_font_dec:
@@ -337,6 +344,12 @@ class KaraokeWindow(QWidget):
             self.title.setText(self._format_song_title(song))
             self._update_next_song()
             self._update_queue_status()
+            num = song.get("song_number")
+            if not num and hasattr(self.ctl, "db") and song.get("id"):
+                num = self.ctl.db.get_song_number(song["id"])
+            self.lyrics.set_song_info(song.get("title") or song.get("filename") or "",
+                                     song.get("artist") or "",
+                                     num)
             if self._is_video_song(song):
                 self._play_song_video(song)
             else:

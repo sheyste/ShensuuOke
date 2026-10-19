@@ -1,5 +1,7 @@
-from __future__ import annotations
 import html
+import os
+from pathlib import Path
+import sys
 import time
 from PySide6.QtCore import QRectF, QTimer, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QImage, QPainter, QPainterPath, QPen, QPixmap
@@ -7,6 +9,23 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from app.utils.lyrics import build_lines, locate
 
 HIGHLIGHT, DONE, UPCOMING = "#5fb7ff", "#ffffff", "#ffffff"
+
+
+def _get_countdown_pixmaps() -> dict[int, QPixmap]:
+    roots = []
+    if getattr(sys, "_MEIPASS", None):
+        roots.append(Path(sys._MEIPASS) / "app" / "resources" / "countdown")
+    roots.append(Path(__file__).resolve().parent.parent / "resources" / "countdown")
+    pixmaps = {}
+    for num in (4, 3, 2, 1):
+        for root in roots:
+            p = root / f"{num}.png"
+            if p.is_file():
+                pix = QPixmap(str(p))
+                if not pix.isNull():
+                    pixmaps[num] = pix
+                    break
+    return pixmaps
 
 
 class _KaraokeLabel(QLabel):
@@ -28,6 +47,10 @@ class LyricsView(QWidget):
         self._bottom_margin = bottom_margin
         self.settings = settings
         self.ctl = ctl
+        self.song_title: str = ""
+        self.song_artist: str = ""
+        self.song_number: int | str | None = None
+        self._countdown_pixmaps: dict[int, QPixmap] = _get_countdown_pixmaps()
         self.highlight_color = (settings.get("lyrics_highlight_color") if settings else None) or HIGHLIGHT
         self.highlight_offset = float(settings.get("lyrics_highlight_offset") if settings else 0.15)
         if settings and hasattr(settings, "add_listener"):
@@ -55,8 +78,33 @@ class LyricsView(QWidget):
 
         if ctl:
             ctl.state_changed.connect(self.set_state)
+            ctl.song_changed.connect(self._on_ctl_song_changed)
             if hasattr(ctl, "tempo"):
                 self._playback_speed = float(getattr(ctl, "tempo", 1.0) or 1.0)
+            if hasattr(ctl, "current") and ctl.current:
+                self._on_ctl_song_changed(ctl.current)
+
+    def set_song_info(self, title: str = "", artist: str = "", song_number: int | str | None = None):
+        self.song_title = title or ""
+        self.song_artist = artist or ""
+        self.song_number = song_number
+        self.label.update()
+
+    def _on_ctl_song_changed(self, song: dict | None):
+        if song and isinstance(song, dict):
+            num = song.get("song_number")
+            if not num and self.ctl and hasattr(self.ctl, "db") and song.get("id"):
+                try:
+                    num = self.ctl.db.get_song_number(song["id"])
+                except Exception:
+                    num = None
+            self.set_song_info(
+                song.get("title") or song.get("filename") or "",
+                song.get("artist") or "",
+                num
+            )
+        else:
+            self.set_song_info("", "", None)
 
     def _on_setting_changed(self, key, value):
         if key == "lyrics_highlight_color" and value:
@@ -315,6 +363,7 @@ class LyricsView(QWidget):
 
         t = max(0.0, self._current_pos + self.highlight_offset)
         li, si = locate(self.lines, t)
+        t_first = self.lines[0][0].time if self.lines and self.lines[0] else 0.0
 
         font = QFont(self.font().family(), self.font_size, QFont.Weight.Bold)
         metrics = QFontMetrics(font)
@@ -332,6 +381,19 @@ class LyricsView(QWidget):
                 start_y + metrics.ascent(),
                 start_y + line_h + metrics.ascent()
             ]
+
+        # 1. Before singing begins (li < 0):
+        # Show Title & Artist intro card if not yet in the countdown window
+        if li < 0:
+            countdown_start = max(0.0, t_first - 4.0)
+            if t < countdown_start:
+                fade_window = 0.5
+                alpha = 1.0
+                if countdown_start > fade_window and t >= countdown_start - fade_window:
+                    alpha = max(0.0, (countdown_start - t) / fade_window)
+                self._draw_title_intro_card(painter, w, h, alpha)
+                painter.end()
+                return
 
         if li < 0:
             slot_lines = [0 if len(self.lines) > 0 else None,
@@ -364,6 +426,17 @@ class LyricsView(QWidget):
             baseline_y = slot_y[slot_idx]
             self._draw_karaoke_line(painter, line_info, progress_x, baseline_y, w, is_active)
 
+        # 2. Draw Countdown just above the lyrics of the song:
+        top_text_y = slot_y[0] - metrics.ascent()
+        if li < 0 and t_first - 4.0 <= t < t_first:
+            self._draw_countdown(painter, w, top_text_y, t_first - t)
+        elif li >= 0 and li + 1 < len(self.lines):
+            next_start = self.lines[li + 1][0].time
+            cur_info = self._get_line_render(self.lines[li], li, label)
+            cur_end = cur_info["syl_data"][-1][3] if cur_info.get("syl_data") else self.lines[li][-1].time
+            if next_start - cur_end >= 5.5 and next_start - 4.0 <= t < next_start:
+                self._draw_countdown(painter, w, top_text_y, next_start - t)
+
         painter.end()
 
     def _draw_karaoke_line(self, painter: QPainter, line_info: dict, progress_x: float,
@@ -395,8 +468,6 @@ class LyricsView(QWidget):
 
         # 2. Blit highlight line clipped to progress_x
         if is_active and progress_x > 0.0:
-            # Clip in logical coordinates (DPI-safe) instead of using a source
-            # rect, which is in device pixels and distorts on scaled displays.
             clip_w = progress_x + pad_x
             painter.save()
             painter.setClipRect(QRectF(draw_x, draw_y, clip_w, pix_h), Qt.ClipOperation.IntersectClip)
@@ -404,4 +475,165 @@ class LyricsView(QWidget):
             painter.restore()
 
         if scale < 1.0:
+            painter.restore()
+
+    def _draw_title_intro_card(self, painter: QPainter, w: int, h: int, alpha: float = 1.0):
+        if not self.song_title and not self.song_artist:
+            return
+        painter.save()
+        painter.setOpacity(max(0.0, min(1.0, alpha)))
+
+        display_number = ""
+        if self.song_number:
+            raw_num = str(self.song_number).strip()
+            display_number = raw_num if raw_num.startswith(("#", "No.")) else f"#{raw_num}"
+
+        display_title = self.song_title or "Unknown Title"
+        # If display_title happens to start with the song number prefix, strip it for clean display
+        if display_number and display_title.startswith(display_number):
+            display_title = display_title[len(display_number):].lstrip(" -–—")
+        elif display_title.startswith("#"):
+            import re
+            m = re.match(r"^(#\d+)\s*[-–—]\s*(.*)$", display_title)
+            if m:
+                if not display_number:
+                    display_number = m.group(1)
+                display_title = m.group(2)
+        display_artist = self.song_artist or ""
+
+        number_pt = max(18, min(38, int(self.font_size * 0.95)))
+        title_pt = max(24, min(54, int(self.font_size * 1.30)))
+        artist_pt = max(16, min(34, int(self.font_size * 0.80)))
+
+        number_font = QFont(self.font().family(), number_pt, QFont.Weight.Bold)
+        title_font = QFont(self.font().family(), title_pt, QFont.Weight.Bold)
+        artist_font = QFont(self.font().family(), artist_pt, QFont.Weight.DemiBold)
+
+        number_m = QFontMetrics(number_font)
+        title_m = QFontMetrics(title_font)
+        artist_m = QFontMetrics(artist_font)
+
+        max_text_w = float(max(100, w - 80))
+        if display_number and number_m.horizontalAdvance(display_number) > max_text_w:
+            display_number = number_m.elidedText(display_number, Qt.TextElideMode.ElideRight, int(max_text_w))
+        if title_m.horizontalAdvance(display_title) > max_text_w:
+            display_title = title_m.elidedText(display_title, Qt.TextElideMode.ElideRight, int(max_text_w))
+        if display_artist and artist_m.horizontalAdvance(display_artist) > max_text_w:
+            display_artist = artist_m.elidedText(display_artist, Qt.TextElideMode.ElideRight, int(max_text_w))
+
+        has_num = bool(display_number)
+        has_art = bool(display_artist)
+        spacing = 14.0
+        total_text_h = (
+            (number_m.height() + spacing if has_num else 0.0)
+            + title_m.height()
+            + (spacing + artist_m.height() if has_art else 0.0)
+        )
+
+        start_y = (h - total_text_h) / 2.0
+        if self._bottom_margin > 0:
+            start_y = max(20.0, start_y - self._bottom_margin / 2.0)
+
+        cur_y = start_y
+
+        # 1. Draw Song Number (above title)
+        if has_num:
+            num_w = float(number_m.horizontalAdvance(display_number))
+            num_x = (w - num_w) / 2.0
+            num_y = cur_y + number_m.ascent()
+            n_path = QPainterPath()
+            n_path.addText(num_x, num_y, number_font, display_number)
+            n_shadow = QPainterPath()
+            n_shadow.addText(num_x + 2.0, num_y + 2.5, number_font, display_number)
+            painter.fillPath(n_shadow, QBrush(QColor(0, 0, 0, 200)))
+            painter.strokePath(n_path, QPen(QColor(0, 0, 0, 230), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.fillPath(n_path, QBrush(QColor(255, 255, 255)))
+            cur_y += number_m.height() + spacing
+
+        # 2. Draw Title (pure white with strong dark shadow and outline)
+        title_w = float(title_m.horizontalAdvance(display_title))
+        title_x = (w - title_w) / 2.0
+        title_y = cur_y + title_m.ascent()
+        t_path = QPainterPath()
+        t_path.addText(title_x, title_y, title_font, display_title)
+        t_shadow = QPainterPath()
+        t_shadow.addText(title_x + 2.5, title_y + 3.0, title_font, display_title)
+        painter.fillPath(t_shadow, QBrush(QColor(0, 0, 0, 210)))
+        painter.strokePath(t_path, QPen(QColor(0, 0, 0, 240), 3.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.fillPath(t_path, QBrush(QColor(255, 255, 255)))
+        cur_y += title_m.height() + spacing
+
+        # 3. Draw Artist (pure white with strong dark shadow and outline)
+        if has_art:
+            art_w = float(artist_m.horizontalAdvance(display_artist))
+            art_x = (w - art_w) / 2.0
+            art_y = cur_y + artist_m.ascent()
+            a_path = QPainterPath()
+            a_path.addText(art_x, art_y, artist_font, display_artist)
+            a_shadow = QPainterPath()
+            a_shadow.addText(art_x + 2.0, art_y + 2.5, artist_font, display_artist)
+            painter.fillPath(a_shadow, QBrush(QColor(0, 0, 0, 200)))
+            painter.strokePath(a_path, QPen(QColor(0, 0, 0, 230), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.fillPath(a_path, QBrush(QColor(255, 255, 255)))
+
+        painter.restore()
+
+    def _draw_countdown(self, painter: QPainter, w: int, top_lyric_y: float, seconds_left: float):
+        if seconds_left <= 0.0 or seconds_left > 4.0:
+            return
+        active_num = max(1, min(4, int(seconds_left) + 1))
+        if seconds_left >= 3.99:
+            active_num = 4
+
+        base_badge_size = min(54.0, max(36.0, self.font_size * 1.30))
+        gap = 12.0
+        total_w = 4 * base_badge_size + 3 * gap
+        if total_w > w - 40:
+            scale_fit = (w - 40) / total_w
+            base_badge_size *= scale_fit
+            gap *= scale_fit
+            total_w = 4 * base_badge_size + 3 * gap
+
+        start_x = (float(w) - total_w) / 2.0
+        countdown_y = top_lyric_y - base_badge_size - 14.0
+        if countdown_y < 8.0:
+            countdown_y = 8.0
+
+        sub_sec = seconds_left - (active_num - 1)
+
+        for i, num in enumerate((4, 3, 2, 1)):
+            pix = self._countdown_pixmaps.get(num)
+            if not pix or pix.isNull():
+                continue
+
+            cx = start_x + i * (base_badge_size + gap) + base_badge_size / 2.0
+            cy = countdown_y + base_badge_size / 2.0
+
+            if num == active_num:
+                pop = max(0.0, sub_sec - 0.65) / 0.35
+                scale = 1.05 + 0.15 * pop
+                opacity = 1.0
+
+                glow_size = base_badge_size * scale + 10.0
+                glow_rect = QRectF(cx - glow_size / 2.0, cy - glow_size / 2.0, glow_size, glow_size)
+                g_path = QPainterPath()
+                g_path.addRoundedRect(glow_rect, 12, 12)
+                painter.save()
+                painter.setOpacity(0.35)
+                painter.fillPath(g_path, QBrush(QColor(255, 255, 255)))
+                painter.restore()
+            elif num > active_num:
+                scale = 0.95
+                opacity = 0.45
+            else:
+                scale = 0.90
+                opacity = 0.22
+
+            draw_size = base_badge_size * scale
+            target_rect = QRectF(cx - draw_size / 2.0, cy - draw_size / 2.0, draw_size, draw_size)
+
+            painter.save()
+            painter.setOpacity(opacity)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawPixmap(target_rect.toRect(), pix)
             painter.restore()

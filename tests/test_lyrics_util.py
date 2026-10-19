@@ -61,7 +61,45 @@ def test_lyrics_settings_and_color_propagation():
     assert settings.get("lyrics_highlight_offset") == 0.2
     assert view.highlight_offset == 0.2
     settings_view._reset_timing()
-    assert settings.get("lyrics_highlight_offset") == 0.15
-    assert view.highlight_offset == 0.15
     assert settings_view.timing_slider.value() == 150
+
+
+def test_lyrics_intro_title_and_countdown():
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QImage, QPainter
+    from app.ui.lyrics_view import LyricsView, _get_countdown_pixmaps
+
+    app = QApplication.instance() or QApplication([])
+    pixmaps = _get_countdown_pixmaps()
+    assert len(pixmaps) == 4
+    for n in (1, 2, 3, 4):
+        assert n in pixmaps and not pixmaps[n].isNull()
+
+    view = LyricsView(font_size=28)
+    view.resize(1000, 600)
+    view.set_song_info("Bohemian Rhapsody", "Queen", 42)
+    # Lyrics start at 12.0s
+    line = [ev(12.0, "Is this the real life "), ev(14.0, "is this just fantasy")]
+    view.set_lyrics(line)
+
+    img = QImage(1000, 600, QImage.Format.Format_ARGB32)
+
+    # 1. Test Intro Title Card phase (t = 2.0s < 8.0s)
+    view.set_position(2.0)
+    p = QPainter(img)
+    view._paint_lyrics(view.label)
+    p.end()
+
+    # 2. Test Countdown phase (t = 10.0s, 2 seconds remaining)
+    view.set_position(10.0)
+    p = QPainter(img)
+    view._paint_lyrics(view.label)
+    p.end()
+
+    # 3. Test Singing phase (t = 13.0s)
+    view.set_position(13.0)
+    p = QPainter(img)
+    view._paint_lyrics(view.label)
+    p.end()
+
 

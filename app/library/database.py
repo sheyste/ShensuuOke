@@ -246,10 +246,22 @@ class Database:
                 sql += f" OFFSET {int(offset)}"
         return self._all(sql, params)
 
-    def count_songs(self, include_missing=False):
-        if include_missing:
-            return self._one("SELECT COUNT(*) AS n FROM songs")["n"]
-        return self._one("SELECT COUNT(*) AS n FROM songs WHERE missing=0")["n"]
+    def count_songs(self, search="", favorites_only=False, recent_only=False, include_missing=False):
+        where, params = [], []
+        if not include_missing:
+            where.append("missing=0")
+        if search.strip():
+            for term in search.split():
+                like = f"%{term.replace('%', '').replace('_', ' ')}%"
+                where.append("(title LIKE ? OR artist LIKE ? OR filename LIKE ? "
+                             "OR format LIKE ? OR path LIKE ?)")
+                params += [like] * 5
+        if favorites_only:
+            where.append("favorite=1")
+        if recent_only:
+            where.append("last_played IS NOT NULL")
+        sql = "SELECT COUNT(*) AS n FROM songs" + (" WHERE " + " AND ".join(where) if where else "")
+        return self._one(sql, params)["n"]
 
     def purge_missing_songs(self) -> int:
         """Permanently delete all songs flagged as missing from the database."""

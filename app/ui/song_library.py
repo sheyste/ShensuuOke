@@ -16,12 +16,38 @@ class SongTableModel(QAbstractTableModel):
         super().__init__()
         self.rows: list[dict] = []
         self.playing_id = None
+        self.can_fetch_more_cb = None
+        self.fetch_more_cb = None
 
     def set_rows(self, rows):
-        self.beginResetModel(); self.rows = rows; self.endResetModel()
+        self.beginResetModel()
+        self.rows = list(rows)
+        self.endResetModel()
+
+    def append_rows(self, new_rows):
+        if not new_rows:
+            return
+        first = len(self.rows)
+        last = first + len(new_rows) - 1
+        self.beginInsertRows(QModelIndex(), first, last)
+        self.rows.extend(new_rows)
+        self.endInsertRows()
 
     def rowCount(self, parent=QModelIndex()): return 0 if parent.isValid() else len(self.rows)
     def columnCount(self, parent=QModelIndex()): return len(self.HEADERS)
+
+    def canFetchMore(self, parent=QModelIndex()):
+        if parent.isValid():
+            return False
+        if callable(self.can_fetch_more_cb):
+            return self.can_fetch_more_cb()
+        return False
+
+    def fetchMore(self, parent=QModelIndex()):
+        if parent.isValid():
+            return
+        if callable(self.fetch_more_cb):
+            self.fetch_more_cb()
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
@@ -56,11 +82,17 @@ class SongTableModel(QAbstractTableModel):
 
 class LibraryView(QWidget):
     """mode: library | recent | favorites | playlist"""
+    PAGE_SIZE = 100
+
     def __init__(self, db, settings, ctl, mode="library", parent=None):
         super().__init__(parent)
         self.db, self.settings, self.ctl, self.mode = db, settings, ctl, mode
         self.playlist_id = None
         self.sort = settings.get("library_sort"); self.desc = bool(settings.get("library_desc"))
+        self._total_count = 0
+        self._is_loading = False
+        self._dirty = True
+        self._playlist_cache: list[dict] = []
 
         self.search = QLineEdit(); self.search.setPlaceholderText("Search title, artist, filename, format or path…")
         self.search.setClearButtonEnabled(True)
@@ -84,12 +116,16 @@ class LibraryView(QWidget):
             self.clear_recent_b.hide()
 
         self.model = SongTableModel()
+        self.model.can_fetch_more_cb = lambda: len(self.model.rows) < self._total_count
+        self.model.fetch_more_cb = self.load_more
+
         self.table = QTableView(); self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True); self.table.verticalHeader().hide(); self.table.setShowGrid(False)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.verticalScrollBar().valueChanged.connect(self._on_scroll)
         h = self.table.horizontalHeader(); h.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         h.setStretchLastSection(False)
         for i, w in enumerate((42, 36, 260, 180, 70, 80, 360, 90)):
@@ -108,9 +144,17 @@ class LibraryView(QWidget):
         self.table.customContextMenuRequested.connect(self._menu)
         self.up_b.clicked.connect(lambda: self._move(-1)); self.down_b.clicked.connect(lambda: self._move(1))
         self.clear_recent_b.clicked.connect(self._clear_recent)
-        ctl.library_changed.connect(self.reload)
+        ctl.library_changed.connect(self._on_library_changed)
         ctl.song_changed.connect(self._playing_changed)
-        self.reload()
+
+        if self.isVisible():
+            self.reload()
+
+    def _on_library_changed(self):
+        if self.isVisible():
+            self.reload()
+        else:
+            self._dirty = True
 
     def _clear_recent(self):
         self.db.clear_recently_played()
@@ -121,20 +165,88 @@ class LibraryView(QWidget):
         self.playlist_id = pid; self.reload()
 
     def reload(self):
-        if self.mode == "playlist":
-            rows = self.db.playlist_songs(self.playlist_id) if self.playlist_id else []
-            q = self.search.text().lower().strip()
-            if q:
-                rows = [r for r in rows if q in " ".join(str(r.get(k) or "") for k in ("title", "artist", "filename", "format", "path")).lower()]
+        self._dirty = False
+        self._is_loading = True
+        search_text = self.search.text().strip()
+        try:
+            if self.mode == "playlist":
+                all_rows = self.db.playlist_songs(self.playlist_id) if self.playlist_id else []
+                if search_text:
+                    q = search_text.lower()
+                    all_rows = [r for r in all_rows if q in " ".join(str(r.get(k) or "") for k in ("title", "artist", "filename", "format", "path")).lower()]
+                self._playlist_cache = all_rows
+                self._total_count = len(all_rows)
+                initial_rows = all_rows[:self.PAGE_SIZE]
+            else:
+                self._total_count = self.db.count_songs(
+                    search=search_text,
+                    favorites_only=self.mode == "favorites",
+                    recent_only=self.mode == "recent",
+                )
+                initial_rows = self.db.list_songs(
+                    search_text, self.sort, self.desc,
+                    favorites_only=self.mode == "favorites",
+                    recent_only=self.mode == "recent",
+                    limit=self.PAGE_SIZE,
+                    offset=0,
+                )
+            self.model.set_rows(initial_rows)
+            self._update_status()
+        finally:
+            self._is_loading = False
+
+        QTimer.singleShot(0, self._check_fill_viewport)
+
+    def load_more(self):
+        if self._is_loading:
+            return
+        cur_len = len(self.model.rows)
+        if cur_len >= self._total_count:
+            return
+        self._is_loading = True
+        try:
+            if self.mode == "playlist":
+                chunk = self._playlist_cache[cur_len:cur_len + self.PAGE_SIZE]
+            else:
+                chunk = self.db.list_songs(
+                    self.search.text().strip(),
+                    self.sort,
+                    self.desc,
+                    favorites_only=self.mode == "favorites",
+                    recent_only=self.mode == "recent",
+                    limit=self.PAGE_SIZE,
+                    offset=cur_len,
+                )
+            if chunk:
+                self.model.append_rows(chunk)
+            self._update_status()
+        finally:
+            self._is_loading = False
+
+    def _update_status(self):
+        cur = len(self.model.rows)
+        total = self._total_count
+        if cur < total:
+            self.status.setText(f"Showing {cur} of {total} songs")
         else:
-            rows = self.db.list_songs(self.search.text(), self.sort, self.desc,
-                                      favorites_only=self.mode == "favorites", recent_only=self.mode == "recent")
-        self.model.set_rows(rows)
-        self.status.setText(f"{len(rows)} song{'s' if len(rows) != 1 else ''}")
+            self.status.setText(f"{total} song{'s' if total != 1 else ''}")
+
+    def _on_scroll(self, val):
+        sb = self.table.verticalScrollBar()
+        if sb.maximum() > 0 and val >= sb.maximum() - 25:
+            self.load_more()
+
+    def _check_fill_viewport(self):
+        if not self.isVisible():
+            return
+        sb = self.table.verticalScrollBar()
+        if sb.maximum() == 0 and len(self.model.rows) < self._total_count:
+            self.load_more()
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.reload()
+        if self._dirty:
+            self.reload()
 
     def _playing_changed(self, song):
         self.model.playing_id = song["id"] if song else None
