@@ -1,106 +1,166 @@
 # ShensuuOke
 
-A desktop karaoke application (Python 3.12+, PySide6). Plays MIDI/KAR through FluidSynth with swappable
-SoundFonts, plays audio/video files through FFmpeg, and routes **everything through one shared 10-band equalizer**.
+A desktop karaoke and media playback workstation built with Python 3.12+ and PySide6 (Qt6). Plays MIDI/KAR files through native FluidSynth with real-time soundfont switching and dynamic bass enhancement, plays audio and video tracks through FFmpeg/QtMultimedia, and routes **all playback through a unified 10-band equalizer and DSP chain**.
 
-## Architecture
+Includes a dual-screen karaoke display, synchronized lyric highlight engine, phone-accessible LAN remote control, and a high-performance indexed library.
+
+---
+
+## Key Features
+
+- **Audio & MIDI Synthesizer Engine**:
+  - Sample-accurate MIDI/KAR playback via native FluidSynth 3.x.
+  - Real-time SoundFont hot-swapping without playback interruption.
+  - **Bass Punch DSP**: Low-frequency harmonic saturation and punch for punchy bass drums and basslines.
+  - **10-Band Equalizer**: RBJ biquad filters with persistent state, bass boost, and custom user presets.
+  - Multi-format audio decoding via FFmpeg (MP3, WAV, FLAC, OGG, M4A, etc.).
+
+- **Karaoke View & Visuals**:
+  - Synchronized, continuous syllable lyric coloring (smooth progressive fill).
+  - Clean song intro overlay displaying `#SongNumber` above the Title and Artist.
+  - Visual 4-second countdown badges (`[4] [3] [2] [1]`) before singing and long instrumental breaks.
+  - Background video playback (MP4, MKV, AVI, WebM) with seamless looping.
+  - Full-screen support (`F11`) with responsive on-screen controls and quick **Menu** navigation.
+
+- **High-Performance Song Library**:
+  - Incremental lazy loading and infinite scrolling for instant page loading even with 50,000+ songs.
+  - Instant debounced search across title, artist, filename, format, and path.
+  - Stable 1-based karaoke song numbers for fast keypad selection.
+  - Automated library folder watcher, duplicate detector, and clean-up for missing songs.
+
+- **Smartphone Web Remote Control**:
+  - Built-in LAN HTTP remote server; scan the on-screen QR code with any mobile device to connect.
+  - Mobile keypad to queue tracks by song number with live title/artist preview.
+  - Browse library songs with shuffle discovery and search.
+  - View live queue status with one-tap play and remove actions.
+
+---
+
+## Architecture Overview
 
 ```
 MidiSource (mido sequencer → FluidSynth.get_samples) ┐
-                                                      ├→ Equalizer → volume/limiter → sounddevice (PortAudio)
+                                                      ├→ Bass Punch DSP → 10-Band Equalizer → Limiter → sounddevice (PortAudio)
 FileSource (FFmpeg-decoded float32 PCM)              ┘
 ```
 
-| Layer | Path | Notes |
+| Layer | Path | Description |
 |---|---|---|
-| Audio | `app/audio/` | `equalizer.py` (RBJ biquads, scipy `sosfilt`, state kept across blocks), `fluidsynth_backend.py`, `midi_engine.py` (parser + sample-accurate sequencer), `audio_decoder.py`, `audio_engine.py` |
-| Library | `app/library/` | `database.py` (SQLite, `PRAGMA user_version` migrations), `scanner.py`, `metadata.py` |
-| Services | `app/services/` | `play_queue.py` (pure Python), `playback.py` (Qt controller), `scan_worker.py`, `settings.py` |
-| UI | `app/ui/` | main window, library, playlists, now playing + queue, lyrics, karaoke window, EQ, SoundFont manager, settings |
+| **Audio** | `app/audio/` | `audio_engine.py`, `midi_engine.py`, `fluidsynth_backend.py`, `equalizer.py` (10-band biquads + bass punch saturation), `audio_decoder.py` |
+| **Library** | `app/library/` | `database.py` (SQLite with `PRAGMA user_version` migrations and stable numbering), `scanner.py`, `metadata.py` |
+| **Services** | `app/services/` | `playback.py` (Qt controller), `play_queue.py`, `remote_server.py` (mobile LAN web interface), `settings.py`, `scan_worker.py` |
+| **UI** | `app/ui/` | `main_window.py`, `karaoke_window.py`, `lyrics_view.py` (countdown & lyric rendering), `song_library.py` (lazy-loading table), `settings_view.py`, `equalizer_view.py`, `soundfont_manager.py` |
+| **Packaging** | `packaging/` | `bump_version.py`, `build_windows.bat`, `build.ps1`, `installer.iss`, `file_version_info.txt`, `version.json` |
 
+---
 
-## Windows setup (Windows 10/11)
+## Development Setup
 
-1. **Python 3.12+** from python.org (tick "Add to PATH").
-2. **FluidSynth** (native library, v2.x): download the Windows build from the FluidSynth GitHub releases, unzip e.g. to `C:\tools\fluidsynth`, and either add `C:\tools\fluidsynth\bin` to `PATH` **or** set that folder under *Audio Settings → FluidSynth DLL folder* (restart afterwards) **or** set the environment variable `FLUIDSYNTH_DLL_DIR`.
-3. **FFmpeg**: install a build (e.g. `winget install Gyan.FFmpeg`) so `ffmpeg.exe` is on `PATH`, or set its path under *Audio Settings*.
-4. Create the environment and run:
-```
+### Prerequisites
+
+- **Python 3.12+** (Windows 64-bit recommended; ensure "Add Python to PATH" is checked during installation).
+- **Git** (recommended for version control and repository management).
+
+### 1. Clone & Set Up Virtual Environment
+
+Open a terminal (PowerShell or Command Prompt) in the project directory:
+
+```powershell
+# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate
+
+# Activate virtual environment
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Windows (CMD):
+.venv\Scripts\activate.bat
+
+# Install dependencies
 pip install -r requirements.txt
+```
+
+### 2. Runtime Binaries & SoundFonts
+
+The project stores native runtimes and soundfonts in the `runtime/` folder:
+
+- **FluidSynth DLLs**: Native 64-bit runtime libraries reside in `runtime/fluidsynth/`.
+- **FFmpeg**: Executable lives in `runtime/ffmpeg/ffmpeg.exe`. If downloaded from git as an archive, run:
+  ```powershell
+  Expand-Archive -Path runtime\ffmpeg\ffmpeg.zip -DestinationPath runtime\ffmpeg -Force
+  ```
+- **SoundFont**: The default soundfont (`runtime/soundfonts/KaraOke_King_v2.sf2`) is stored as split git parts. To extract it:
+  ```powershell
+  python -c "import io, zipfile; data = open(r'runtime/soundfonts/KaraOke_King_v2.zip.part1','rb').read() + open(r'runtime/soundfonts/KaraOke_King_v2.zip.part2','rb').read(); zipfile.ZipFile(io.BytesIO(data)).extractall(r'runtime/soundfonts')"
+  ```
+  *(Note: The build scripts unpack these automatically if missing).*
+
+### 3. Run Application
+
+```powershell
 python main.py
 ```
-5. **SoundFont:** bring your own legally obtained `.sf2` (nothing is bundled). Add it in *SoundFont Manager* → *Use selected*.
-6. **Songs:** *Song Library → Add folder…* (recursive) or *Add files…*, then double-click a song.
 
-Linux (future): the code is platform-neutral apart from the DLL lookup; install `fluidsynth`, `ffmpeg` and `libportaudio2` from your package manager.
+---
 
-## Verifying real playback
+## Running the Test Suite
 
-```
-python tools/make_sample_midi.py sample.kar     # creates a short KAR file with lyrics
-python main.py
-```
-Add `sample.kar`, add your SoundFont, double-click the song: you should hear a scale and see highlighted lyrics.
-Then (1) switch to a second `.sf2` mid-song — the timbre must change; (2) open *Equalizer* → *Bass Boost* — the sound must
-change for both MIDI and audio files; (3) *Audio Settings → Test output* plays a 440 Hz tone through the same chain.
+The automated test suite contains 72 tests covering DSP filters, equalizer curves, database migrations, stable song numbering, scanner recursion, remote server endpoints, playback queue, lyrics timing, and version bumping.
 
-## Tests
-```
-pip install -r requirements.txt
+```powershell
+# Run all tests
 pytest
+
+# Run tests with short summary
+pytest -v
 ```
-Tests cover the EQ DSP, MIDI/KAR parsing and sequencing, FluidSynth backend and SoundFont switching (with a fake `fluidsynth`
-module, so no native library is needed), engine callback/cleanup/error handling, SQLite + migrations, playlists, scanner
-(recursion, duplicates, moved/missing files, unsupported files), queue behavior and lyric timing. GUI code is not unit-tested;
-run the manual checks above.
+
+---
+
+## Building Standalone Executable & Installer
+
+ShensuuOke includes automated packaging with automatic version bumping on every build.
+
+### Build Command (Batch)
+
+Double-click or run from terminal:
+```cmd
+packaging\build_windows.bat
+```
+
+### Build Command (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+### What the Build Script Does:
+1. **Auto-Increments Version**: Runs `packaging/bump_version.py` to bump the patch version across `version.json`, `app/version.py`, `file_version_info.txt`, and `installer.iss`.
+2. **Bundles with PyInstaller**: Uses `ShensuuOke.spec` to package the app, Qt6 plugins, SoundFonts, and runtime DLLs into `dist\ShensuuOke\`.
+3. **Creates Setup Installer**: Invokes Inno Setup (if installed) to generate `dist\ShensuuOke-Setup-v<version>.exe` with desktop icons, file associations, and uninstaller.
+
+---
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Issue | Solution |
 |---|---|
-| "FluidSynth could not be loaded" | Install FluidSynth; add its `bin` folder to PATH or set it in Audio Settings; the Python and DLL bitness must match (64-bit both). |
-| "No SoundFont is loaded" | Add an `.sf2` in SoundFont Manager and press *Use selected*. |
-| "FFmpeg not found" | Add `ffmpeg.exe` to PATH or set the path in Audio Settings → *Save & check*. |
-| "Cannot open audio output device" | Choose another device in Audio Settings; close apps using the device exclusively. |
-| Crackling / dropouts | Lower synth gain, close CPU-heavy apps; larger block size is `AudioEngine(block=2048)`. |
-| MIDI has no lyrics | Many `.mid` files have none; the lyrics panel says so. Only lyric/text events are shown. |
-| File shows "Missing" | It moved or its drive is disconnected; *Rescan* re-links moved files (matched by content) and keeps favorites/play counts. |
-| Reverb/chorus error message | Upgrade `pyfluidsynth` (`pip install -U pyfluidsynth`). |
+| **FluidSynth DLL not found** | Verify `runtime\fluidsynth\libfluidsynth-3.dll` exists. If using an external build, ensure both Python and DLLs are 64-bit and set the folder under *Audio Settings*. |
+| **No SoundFont active** | Open *SoundFont Manager*, ensure `KaraOke_King_v2.sf2` is selected and set as default. |
+| **Audio output error** | Go to *Audio Settings* and select your primary audio output device (e.g. Speakers / Headphones) and test with the 440 Hz tone button. |
+| **Missing songs in library** | In *Application Settings*, click **Clean missing songs** to purge deleted or renamed files, or click **Rescan** to automatically update file paths while preserving favorites and play counts. |
+| **Audio crackling / dropouts** | In *Audio Settings*, lower the output gain slightly or ensure no exclusive-mode applications are blocking PortAudio. |
 
-Data lives in `%USERPROFILE%\Documents\ShensuuOke\library.db`. Removing songs/folders/SoundFonts from the app never deletes the original files.
+---
 
-## Packaging (optional)
-```
-pip install pyinstaller
-packaging\build_windows.bat
-```
-Edit `FLUIDSYNTH_BIN` in the script to point at your FluidSynth `bin` folder; its DLLs are copied next to the executable
-and found automatically. FFmpeg is not bundled by default (see licenses below).
+## Third-Party Licenses
 
-## How to Build into Installable Package EXE?
-
-1. First run `packaging\build_windows.bat`.
-2. Wait until it finishes.
-3. Find `dist\ShensuuOke-Setup.exe`.
-4. Done!
-
-
-
-
-## Third-party licenses (verify current terms before redistributing)
-
-| Component | License | Note |
+| Component | License | Notes |
 |---|---|---|
-| PySide6 / Qt | LGPL-3.0 (or commercial) | Dynamic linking; keep license notices. |
-| FluidSynth, pyfluidsynth | LGPL-2.1 | DLLs may be bundled with notices. |
-| FFmpeg | LGPL-2.1+ or GPL-2+ depending on the build | Bundling a GPL build has GPL obligations; prefer asking users to install it. |
-| mutagen | GPL-2.0-or-later | **Copyleft: distributing it inside a closed-source bundle needs a legal review.** Metadata reading degrades gracefully without it. |
-| mido, sounddevice, PortAudio | MIT | |
-| NumPy, SciPy | BSD-3-Clause | |
-| SQLite | Public domain | |
-| SoundFonts, karaoke files | Their own licenses | None are included; supply only media you may legally use. |
-
-
-
+| **PySide6 / Qt6** | LGPL-3.0 | Dynamically linked Qt6 binaries. |
+| **FluidSynth / pyfluidsynth** | LGPL-2.1 | Native MIDI soundfont synthesizer. |
+| **FFmpeg** | LGPL-2.1+ / GPL-2+ | Media decoding utility. |
+| **sounddevice / PortAudio** | MIT | Real-time audio stream output. |
+| **mido** | MIT | MIDI event parser and timing engine. |
+| **NumPy / SciPy** | BSD-3-Clause | DSP audio filtering & biquad calculation. |
+| **qrcode** | BSD | Mobile connection QR code generation. |
+| **mutagen** | GPL-2.0+ | Audio metadata tag extraction. |
