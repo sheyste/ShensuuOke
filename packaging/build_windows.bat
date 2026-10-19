@@ -36,10 +36,12 @@ if not exist "runtime\soundfonts\KaraOke_King_v2.sf2" (
 
 if not exist "%FFMPEG_BIN%\ffmpeg.exe" (
   echo Missing %FFMPEG_BIN%\ffmpeg.exe
+  pause
   exit /b 1
 )
 if not exist "%FLUIDSYNTH_BIN%\*.dll" (
   echo Missing FluidSynth DLLs in %FLUIDSYNTH_BIN%
+  pause
   exit /b 1
 )
 
@@ -74,21 +76,30 @@ echo Running PyInstaller with embedded Windows Version Info and Assets...
 "%PYINSTALLER%" --noconfirm ShensuuOke.spec
 
 if errorlevel 1 (
+  echo.
   echo PyInstaller build failed!
   pause
   exit /b !errorlevel!
 )
 
-set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Users\Sheyste\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC=ISCC.exe
+set ISCC=
+if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "C:\Users\Sheyste\AppData\Local\Programs\Inno Setup 6\ISCC.exe" set ISCC="C:\Users\Sheyste\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+if not defined ISCC (
+  where iscc.exe >nul 2>&1
+  if !errorlevel! equ 0 set ISCC=iscc.exe
+)
 
-if exist %ISCC% (
+if defined ISCC (
   echo.
-  echo Building Windows Setup Installer (ShensuuOke-Setup-v!APP_VER!.exe) with Inno Setup...
+  echo Building Windows Setup Installer [ShensuuOke-Setup-v!APP_VER!.exe] with Inno Setup...
   %ISCC% "/DMyAppVersion=!APP_VER!" "packaging\installer.iss"
+  if errorlevel 1 (
+    echo.
+    echo Warning: Inno Setup compilation encountered an error.
+  )
 )
 
 echo.
