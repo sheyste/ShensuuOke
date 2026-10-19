@@ -15,6 +15,7 @@ from app.ui.settings_view import AppSettingsView, AudioSettingsView
 from app.ui.lyrics_settings_view import LyricsSettingsView
 from app.ui.song_library import LibraryView
 from app.ui.soundfont_manager import SoundFontManager
+from app.version import __version__
 
 
 class HomePage(QWidget):
@@ -45,7 +46,7 @@ class HomePage(QWidget):
 
         title_box = QVBoxLayout()
         title_box.setSpacing(4)
-        title = QLabel("ShensuuOke")
+        title = QLabel(f"ShensuuOke <span style='font-size: 15px; font-weight: 600; color: #7c4dff;'>v{__version__}</span>")
         title.setObjectName("h1")
         title.setStyleSheet("font-size: 28px; font-weight: 800; color: #ffffff;")
 
@@ -139,7 +140,7 @@ class HomePage(QWidget):
 
         dev_html = (
             "<div style='margin-bottom: 4px;'>"
-            "<span style='font-size: 15px; font-weight: bold; color: #ffffff;'>Developer</span><br/>"
+            f"<span style='font-size: 15px; font-weight: bold; color: #ffffff;'>ShensuuOke v{__version__}</span><br/>"
             "<span style='font-size: 14px; font-weight: 600; color: #7c4dff;'>Shensuu</span> "
             "<span style='color: #9ca3af;'>— Lead Developer & Creator of ShensuuOke</span>"
             "</div>"
@@ -215,7 +216,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.db, self.settings, self.ctl = db, settings, ctl
         self.db.clear_recently_played()
-        self.setWindowTitle("ShensuuOke"); self.resize(1280, 800); self.setMinimumSize(900, 600)
+        self.setWindowTitle(f"ShensuuOke v{__version__}"); self.resize(1280, 800); self.setMinimumSize(900, 600)
         logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "icons", "logo.png")
         if os.path.exists(logo_path):
             self.setWindowIcon(QIcon(logo_path))

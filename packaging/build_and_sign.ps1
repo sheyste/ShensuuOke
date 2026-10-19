@@ -57,20 +57,7 @@ Write-Host "Build Version: v$versionStr" -ForegroundColor Green
 $versionFile = "$rootDir\packaging\file_version_info.txt"
 $iconFile = "$rootDir\app\resources\icons\logo.ico"
 
-& $pyinstaller --noconfirm --windowed --name ShensuuOke `
-  --icon $iconFile `
-  --version-file $versionFile `
-  --distpath "$rootDir\dist" `
-  --workpath "$rootDir\build" `
-  --specpath "$rootDir" `
-  --add-data "$rootDir\app\resources;app\resources" `
-  --add-data "$rootDir\runtime\soundfonts;runtime\soundfonts" `
-  --add-binary "$rootDir\runtime\ffmpeg\ffmpeg.exe;runtime\ffmpeg" `
-  --add-binary "$rootDir\runtime\fluidsynth\*.dll;runtime\fluidsynth" `
-  --collect-all sounddevice `
-  --collect-all qrcode `
-  --collect-all pyfluidsynth `
-  "$rootDir\main.py"
+& $pyinstaller --noconfirm --windowed "$rootDir\ShensuuOke.spec"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nPyInstaller build succeeded!" -ForegroundColor Green

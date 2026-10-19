@@ -1,8 +1,14 @@
 # Helper script to auto-increment version number across ShensuuOke build configurations
 $ErrorActionPreference = "Stop"
 $rootDir = (Resolve-Path "$PSScriptRoot\..").Path
-$versionJsonPath = "$rootDir\packaging\version.json"
+$python = if (Test-Path "$rootDir\.venv\Scripts\python.exe") { "$rootDir\.venv\Scripts\python.exe" } else { "python" }
 
+if (Test-Path "$rootDir\packaging\bump_version.py") {
+    $ver = & $python "$rootDir\packaging\bump_version.py"
+    return ($ver | Select-Object -Last 1).Trim()
+}
+
+$versionJsonPath = "$rootDir\packaging\version.json"
 $major = 1
 $minor = 0
 $patch = 0

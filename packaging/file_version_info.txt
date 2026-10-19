@@ -1,7 +1,7 @@
-﻿VSVersionInfo(
+VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 1, 0),
-    prodvers=(1, 0, 1, 0),
+    filevers=(1, 0, 11, 0),
+    prodvers=(1, 0, 11, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -17,12 +17,12 @@
           [
             StringStruct('CompanyName', 'Shensuu'),
             StringStruct('FileDescription', 'ShensuuOke Desktop Karaoke System'),
-            StringStruct('FileVersion', '1.0.1.0'),
+            StringStruct('FileVersion', '1.0.11.0'),
             StringStruct('InternalName', 'ShensuuOke'),
             StringStruct('LegalCopyright', 'Copyright (C) 2026 Shensuu. All rights reserved.'),
             StringStruct('OriginalFilename', 'ShensuuOke.exe'),
             StringStruct('ProductName', 'ShensuuOke'),
-            StringStruct('ProductVersion', '1.0.1.0')
+            StringStruct('ProductVersion', '1.0.11.0')
           ]
         )
       ]

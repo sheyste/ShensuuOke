@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+from app.version import __version__
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
@@ -171,7 +172,7 @@ class AppSettingsView(QWidget):
         video_layout = QVBoxLayout(video_box)
         video_layout.addWidget(QLabel("Folder containing karaoke background videos."))
         video_layout.addLayout(video_row)
-        self.info = QLabel(f"Database: schema v{db.version}"); self.info.setObjectName("muted")
+        self.info = QLabel(f"ShensuuOke v{__version__}  •  Database: schema v{db.version}"); self.info.setObjectName("muted")
         lay = QVBoxLayout(self); lay.addWidget(title); lay.addWidget(box, 1); lay.addWidget(video_box); lay.addWidget(self.info)
         self.rm_b.clicked.connect(self._rm); self.clean_b.clicked.connect(self._clean_missing); self.scan_b.clicked.connect(self._rescan)
         video_browse.clicked.connect(self._browse_video_folder); video_save.clicked.connect(self._save_video_folder)
