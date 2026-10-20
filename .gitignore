@@ -9,3 +9,4 @@ runtime/soundfonts/*.sf2
 runtime/downloads/
 .env
 .env.*
+packaging/
