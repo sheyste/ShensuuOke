@@ -151,7 +151,7 @@ class HomePage(QWidget):
         dev_html = (
             "<div style='margin-bottom: 4px;'>"
             f"<span style='font-size: 15px; font-weight: bold; color: #ffffff;'>ShensuuOke v{__version__}</span><br/>"
-            "<span style='font-size: 14px; font-weight: 600; color: #7c4dff;'>Shensuu</span> "
+            "<span style='font-size: 14px; font-weight: 600; color: #7c4dff;'>SBenDev</span> "
             "<span style='color: #9ca3af;'>— Lead Developer & Creator of ShensuuOke</span>"
             "</div>"
         )
