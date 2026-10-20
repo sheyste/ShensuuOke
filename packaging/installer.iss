@@ -1,7 +1,7 @@
 ﻿; Inno Setup Script for ShensuuOke Karaoke System
 #define MyAppName "ShensuuOke"
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.28"
+#define MyAppVersion "1.0.30"
 #endif
 #define MyAppPublisher "Shensuu"
 #define MyAppExeName "ShensuuOke.exe"
