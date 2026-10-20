@@ -54,7 +54,7 @@ if (Test-Path "$rootDir\dist\ShensuuOke") {
 $versionStr = & "$rootDir\packaging\bump_version.ps1"
 Write-Host "Build Version: v$versionStr" -ForegroundColor Green
 
-& $pyinstaller --noconfirm --windowed "$rootDir\ShensuuOke.spec"
+& $pyinstaller --noconfirm "$rootDir\ShensuuOke.spec"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nPyInstaller build succeeded!" -ForegroundColor Green

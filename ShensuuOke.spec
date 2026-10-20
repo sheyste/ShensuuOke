@@ -2,16 +2,14 @@
 import os, sys
 try:
     _root_dir = os.path.dirname(os.path.abspath(SPEC)) if 'SPEC' in globals() else os.getcwd()
-    _bump_script = os.path.join(_root_dir, 'packaging', 'bump_version.py')
-    if os.path.exists(_bump_script):
-        import importlib.util
-        _spec = importlib.util.spec_from_file_location("bump_version", _bump_script)
-        _mod = importlib.util.module_from_spec(_spec)
-        _spec.loader.exec_module(_mod)
-        _ver = _mod.bump_version()
-        print(f"=== ShensuuOke Build Version: v{_ver} ===")
+    _ver_json = os.path.join(_root_dir, 'packaging', 'version.json')
+    if os.path.exists(_ver_json):
+        import json
+        with open(_ver_json, 'r', encoding='utf-8') as _f:
+            _ver = json.load(_f).get('version', '1.0.0')
+        print(f"=== ShensuuOke Spec Packaging Version: v{_ver} ===")
 except Exception as _e:
-    print(f"=== ShensuuOke Spec Warning: Could not bump version: {_e} ===")
+    print(f"=== ShensuuOke Spec Warning: Could not read version: {_e} ===")
 
 from PyInstaller.utils.hooks import collect_all
 
