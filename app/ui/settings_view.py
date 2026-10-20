@@ -16,19 +16,8 @@ class AudioSettingsView(QWidget):
         r = QHBoxLayout(); r.addWidget(self.dev, 1); r.addWidget(refresh_b); r.addWidget(apply_b)
         box = QGroupBox("Output device"); bl = QVBoxLayout(box); bl.addLayout(r); bl.addWidget(self.current); bl.addWidget(test_b)
 
-        self.ff, self.fs = QLineEdit(settings.get("ffmpeg_path")), QLineEdit(settings.get("fluidsynth_dll_dir"))
-        self.ff.setPlaceholderText("Leave empty to use ffmpeg from PATH"); self.fs.setPlaceholderText("Folder containing libfluidsynth-3.dll (optional)")
-        ffb, fsb = QPushButton("Browse…"), QPushButton("Browse…")
-        paths = QGroupBox("Native dependencies"); pl = QVBoxLayout(paths)
-        for lab, edit, btn in (("FFmpeg executable:", self.ff, ffb), ("FluidSynth DLL folder (restart required):", self.fs, fsb)):
-            pl.addWidget(QLabel(lab)); row = QHBoxLayout(); row.addWidget(edit, 1); row.addWidget(btn); pl.addLayout(row)
-        self.check = QLabel(); pl.addWidget(self.check)
-        check_b = QPushButton("Save && check"); pl.addWidget(check_b)
-
-        lay = QVBoxLayout(self); lay.addWidget(title); lay.addWidget(box); lay.addWidget(paths); lay.addStretch(1)
+        lay = QVBoxLayout(self); lay.addWidget(title); lay.addWidget(box); lay.addStretch(1)
         refresh_b.clicked.connect(self.refresh_devices); apply_b.clicked.connect(self._apply); test_b.clicked.connect(self._test)
-        ffb.clicked.connect(lambda: self._browse(self.ff, False)); fsb.clicked.connect(lambda: self._browse(self.fs, True))
-        check_b.clicked.connect(self._check)
         self.refresh_devices()
 
     def refresh_devices(self):
@@ -53,17 +42,6 @@ class AudioSettingsView(QWidget):
         if self.ctl.state == "playing":
             QMessageBox.information(self, "Test output", "Stop playback first."); return
         self.ctl.stop(); self.ctl.engine.test_tone(1.0)
-
-    def _browse(self, edit, folder):
-        p = pick_fast_directory(self, "Select folder", edit.text().strip()) if folder else QFileDialog.getOpenFileName(self, "Select ffmpeg", "", "Executables (*.exe);;All (*)")[0]
-        if p: edit.setText(p)
-
-    def _check(self):
-        self.settings.set("ffmpeg_path", self.ff.text().strip()); self.settings.set("fluidsynth_dll_dir", self.fs.text().strip())
-        from app.audio.audio_decoder import find_ffmpeg, DecodeError
-        try: ff = f"FFmpeg OK: {find_ffmpeg(self.ff.text().strip() or None)}"
-        except DecodeError as e: ff = f"FFmpeg: {e}"
-        self.check.setText(ff + "\nFluidSynth is verified the first time a MIDI file is played.")
 
 
 def pick_fast_directory(parent, title="Select folder", initial_dir=""):

@@ -90,15 +90,15 @@ class HomePage(QWidget):
         lib_btn.clicked.connect(lambda: go(1))
         actions_box.addWidget(lib_btn)
 
-        sf_btn = QPushButton("🎹 SoundFont Manager")
-        sf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        sf_btn.clicked.connect(lambda: go(3))
-        actions_box.addWidget(sf_btn)
-
         app_settings_btn = QPushButton("📁 Application Settings")
         app_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         app_settings_btn.clicked.connect(lambda: go(6))
         actions_box.addWidget(app_settings_btn)
+
+        sf_btn = QPushButton("🎹 SoundFont Manager")
+        sf_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sf_btn.clicked.connect(lambda: go(3))
+        actions_box.addWidget(sf_btn)
 
         audio_settings_btn = QPushButton("🔊 Audio Settings")
         audio_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -120,14 +120,14 @@ class HomePage(QWidget):
         guide_layout.setSpacing(12)
 
         steps = [
-            ("1. SoundFont Setup",
-             "Navigate to <b>SoundFont Manager</b> and load or activate a SoundFont file (<code>.sf2</code>). This enables rich real-time instrument rendering for MIDI and KAR karaoke tracks."),
-            ("2. Manage Library Folders",
-             "Head over to <b>Application Settings</b> to configure your song directories. The engine automatically indexes and watches all supported formats (MIDI, KAR, MP3, FLAC, CDG, Video)."),
+            ("1. Add Song Folders",
+             "Head over to <b>Application Settings</b> and click <b>Add folder…</b> (or type/paste a path, or drag & drop folders directly from File Explorer). ShensuuOke automatically indexes and watches all supported formats (MIDI, KAR, MP3, FLAC, CDG, Video)."),
+            ("2. Set Background Videos Folder",
+             "In <b>Application Settings</b> under <i>Karaoke background videos</i>, click <b>Browse</b> to select a folder containing video files (MP4, MKV, WebM, etc.) and click <b>Save</b>. These videos will play smoothly behind lyrics on the karaoke screen."),
             ("3. Browse & Queue Songs",
-             "Explore and search your library in the <b>Song Library</b> view. Double-click any song to play immediately, or add songs to the live playback queue."),
+             "Explore and search your library in the <b>Song Library</b> view. Double-click any song to play immediately, or add songs to the live playback queue for upcoming singers."),
             ("4. Sing with Karaoke Screen & Remote",
-             "Switch to <b>Karaoke Screen</b> (press <code>F11</code> for full screen) to enjoy synchronized lyric coloring and background videos. Guests can scan the on-screen QR code with their smartphones to browse, search, and queue songs remotely!"),
+             "Switch to <b>Karaoke Screen</b> (press <code>F11</code> for full screen) to enjoy synchronized lyrics and video backgrounds. Guests can scan the on-screen QR code with their smartphones to browse, search, and queue songs remotely!"),
         ]
 
         for step_title, step_desc in steps:
@@ -297,7 +297,7 @@ class MainWindow(QMainWindow):
         self.f1_shortcut.activated.connect(self._on_f1_pressed)
 
         self.side.currentRowChanged.connect(self._nav)
-        self.side.setCurrentRow(1)
+        self.side.setCurrentRow(0)
         self.now.karaoke_requested.connect(self._open_karaoke)
         ctl.lyrics_changed.connect(self.lyrics.set_lyrics)
         ctl.position_changed.connect(lambda p, d: self.lyrics.set_position(p))
