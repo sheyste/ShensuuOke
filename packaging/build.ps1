@@ -54,9 +54,6 @@ if (Test-Path "$rootDir\dist\ShensuuOke") {
 $versionStr = & "$rootDir\packaging\bump_version.ps1"
 Write-Host "Build Version: v$versionStr" -ForegroundColor Green
 
-$versionFile = "$rootDir\packaging\file_version_info.txt"
-$iconFile = "$rootDir\app\resources\icons\logo.ico"
-
 & $pyinstaller --noconfirm --windowed "$rootDir\ShensuuOke.spec"
 
 if ($LASTEXITCODE -eq 0) {

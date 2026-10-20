@@ -281,6 +281,9 @@ class MainWindow(QMainWindow):
         self.f11_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
         self.f11_shortcut.activated.connect(self._toggle_karaoke_fullscreen)
 
+        self.f1_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F1), self)
+        self.f1_shortcut.activated.connect(self._on_f1_pressed)
+
         self.side.currentRowChanged.connect(self._nav)
         self.side.setCurrentRow(1)
         self.now.karaoke_requested.connect(self._open_karaoke)
@@ -349,6 +352,12 @@ class MainWindow(QMainWindow):
     def show_karaoke_startup(self):
         """Show the karaoke view first, while keeping this interface available."""
         self._open_karaoke_default()
+
+    def _on_f1_pressed(self):
+        if self.window_stack.currentWidget() == self.karaoke:
+            self._show_settings()
+        else:
+            self._open_karaoke()
 
     def _show_settings(self):
         if self.isFullScreen():

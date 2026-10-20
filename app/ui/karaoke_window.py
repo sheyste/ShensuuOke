@@ -1,10 +1,15 @@
 from __future__ import annotations
+import hashlib
 import os
+import re
+import subprocess
+import tempfile
 from PySide6.QtCore import QEvent, QTimer, QUrl, QSizeF, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (QGraphicsDropShadowEffect, QGraphicsScene, QGraphicsView,
                                QHBoxLayout, QLabel, QPushButton, QStackedLayout,
                                QVBoxLayout, QWidget)
+from app.audio.audio_decoder import find_ffmpeg
 from app.ui.lyrics_view import LyricsView
 from app.ui.remote_panel import RemotePanel
 
@@ -67,6 +72,7 @@ class KaraokeWindow(QWidget):
             self.video_player.setAudioOutput(self.video_audio)
             self.video_player.setVideoOutput(self.video)
             self.video_player.mediaStatusChanged.connect(self._video_status)
+            self.video_player.errorOccurred.connect(self._on_video_error)
 
         self.title = QLabel("")
         self.title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -113,8 +119,8 @@ class KaraokeWindow(QWidget):
         self.controls.setFixedHeight(56)
         row = QHBoxLayout(self.controls)
         row.setContentsMargins(0, 0, 0, 8)
-        btns = {"⏮": ctl.previous, "⏯": ctl.toggle_play_pause, "⏭": ctl.next, "A−": lambda: self._size(-6),
-                "A+": lambda: self._size(6), "Background…": self._bg, "Full screen (F11)": self.toggle_fullscreen, "Menu": self.settings_requested.emit}
+        btns = {"A−": lambda: self._size(-6),
+                "A+": lambda: self._size(6), "Background…": self._bg, "Full screen (F11)": self.toggle_fullscreen, "Menu (F1)": self.settings_requested.emit}
         btns.pop(next((key for key in btns if key.startswith("Background")), ""), None)
         row.addStretch(1)
         self.btn_font_dec = None
@@ -168,6 +174,57 @@ class KaraokeWindow(QWidget):
         fmt = (song.get("format") or "").upper()
         return fmt in ("MP4", "MKV", "AVI", "MOV", "WEBM", "VIDEO")
 
+    def _ensure_playable_video(self, src_path: str) -> str:
+        """Ensure the video file uses a codec compatible with Qt's multimedia backend.
+
+        YouTube downloads and converted MP4s often use AV1 or VP9 video streams
+        that fail hardware decode on Windows without specific platform MFTs,
+        resulting in a black screen. When needed, this uses bundled FFmpeg to transcode
+        the video stream to universally-supported H.264 into a temporary cache.
+        """
+        if not src_path or not os.path.isfile(src_path):
+            return src_path
+        try:
+            ffmpeg_bin = find_ffmpeg()
+        except Exception:
+            return src_path
+
+        try:
+            probe = subprocess.run(
+                [ffmpeg_bin, "-i", src_path],
+                capture_output=True,
+                text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                timeout=5
+            )
+            m = re.search(r"Stream #\d+:\d+.*?: Video: ([^,\s]+)", probe.stderr)
+            codec = (m.group(1).lower() if m else "")
+            # H.264 / AVC and VP8/VP9 are natively decoded; AV1 or exotic formats need fallback
+            if codec in ("h264", "avc1", "vp8", "vp9", "mjpeg"):
+                return src_path
+
+            stat = os.stat(src_path)
+            cache_key = hashlib.sha256(f"{os.path.abspath(src_path)}:{stat.st_mtime}:{stat.st_size}".encode()).hexdigest()[:16]
+            cache_dir = os.path.join(tempfile.gettempdir(), "shensuuoke_video_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            dst_path = os.path.join(cache_dir, f"{cache_key}.mp4")
+            if os.path.isfile(dst_path) and os.path.getsize(dst_path) > 0:
+                return dst_path
+
+            tmp_path = dst_path + ".tmp.mp4"
+            cmd = [
+                ffmpeg_bin, "-v", "error", "-y", "-i", src_path,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-pix_fmt", "yuv420p", "-c:a", "copy", tmp_path
+            ]
+            res = subprocess.run(cmd, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=60)
+            if res.returncode == 0 and os.path.isfile(tmp_path):
+                os.replace(tmp_path, dst_path)
+                return dst_path
+        except Exception:
+            pass
+        return src_path
+
     def _play_song_video(self, song: dict):
         if not self.video_player or not self.video:
             return
@@ -176,6 +233,7 @@ class KaraokeWindow(QWidget):
             self.video_player.stop()
             self.video_view.hide()
             return
+        playable_path = self._ensure_playable_video(path)
         self._is_song_video = True
         self.lyrics.setVisible(True)
         self.lyrics.set_lyrics([], "")
@@ -186,7 +244,7 @@ class KaraokeWindow(QWidget):
         self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.video_view.show()
         self._resize_video()
-        url = QUrl.fromLocalFile(path)
+        url = QUrl.fromLocalFile(playable_path)
         if self.video_player.source() != url:
             self.video_player.setSource(url)
         self.video_player.setPosition(0)
@@ -196,12 +254,22 @@ class KaraokeWindow(QWidget):
             self.video_player.pause()
         self.overlay.raise_()
 
+    def _on_video_error(self, error, error_string=""):
+        if not self.video_player:
+            return
+        # If an error occurred with a background video, try advancing to the next one
+        if not self._is_song_video:
+            QTimer.singleShot(500, lambda: self._refresh_background_video(advance=True))
+
     def _video_status(self, status):
         if not self.video_player:
             return
         if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
             self._resize_video()
             QTimer.singleShot(60, self._resize_video)
+        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
+            if not self._is_song_video:
+                QTimer.singleShot(500, lambda: self._refresh_background_video(advance=True))
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
             if not self._is_song_video:
                 self.video_player.setPosition(0)
@@ -419,8 +487,8 @@ class KaraokeWindow(QWidget):
             if self.video:
                 self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
             self.video_view.show()
-            self._resize_video()
-            self.video_player.setSource(QUrl.fromLocalFile(files[self._video_index]))
+            video_file = self._ensure_playable_video(files[self._video_index])
+            self.video_player.setSource(QUrl.fromLocalFile(video_file))
             self.video_player.play()
             self.overlay.raise_()
         else:
@@ -484,7 +552,8 @@ class KaraokeWindow(QWidget):
 
     def keyPressEvent(self, e):
         k = e.key()
-        if k == Qt.Key.Key_F11: self.toggle_fullscreen()
+        if k == Qt.Key.Key_F1: self.settings_requested.emit()
+        elif k == Qt.Key.Key_F11: self.toggle_fullscreen()
         elif k == Qt.Key.Key_Escape:
             w = self.window()
             if w.isFullScreen():
