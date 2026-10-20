@@ -30,11 +30,20 @@ def main() -> int:
         except Exception:
             pass
 
+    # Show Splash Screen immediately while app initializes
+    from app.ui.splash_screen import SplashScreen
+    splash = SplashScreen()
+    splash.show()
+    splash.set_message("Starting ShensuuOke…", 10)
+
     def hook(et, ev, tb):
         traceback.print_exception(et, ev, tb)
+        if 'splash' in locals() and splash.isVisible():
+            splash.close()
         QMessageBox.critical(None, "Unexpected error", f"{et.__name__}: {ev}")
     sys.excepthook = hook
 
+    splash.set_message("Initializing library database…", 25)
     docs_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
     app_docs_dir = os.path.join(docs_dir, "ShensuuOke")
     data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
@@ -57,10 +66,12 @@ def main() -> int:
         db = Database(target_db)
         db.clear_recently_played()
     except (DatabaseError, OSError) as e:
+        splash.close()
         QMessageBox.critical(None, "Database error", str(e)); return 1
 
     # Native playback dependencies are provisioned automatically on Windows.
     # Failure is non-fatal so the library can still open and explain the issue.
+    splash.set_message("Checking audio runtime & soundfonts…", 50)
     _, _, soundfont_path, runtime_error = ensure_native_runtime(data_dir)
     if runtime_error:
         print(f"Native runtime setup warning: {runtime_error}", file=sys.stderr)
@@ -75,11 +86,15 @@ def main() -> int:
         if not cur_sf or not os.path.isfile(cur_sf.get("path", "")) or "dreamsam" in cur_sf.get("path", "").lower():
             db.set_default_soundfont(soundfont_id)
 
+    splash.set_message("Loading audio settings & playlists…", 75)
     settings = Settings(db)
     ctl = PlaybackController(db, settings)
+
+    splash.set_message("Preparing karaoke interface…", 90)
     win = MainWindow(db, settings, ctl)
     win.showMaximized()
     ctl.start_audio()          # reports a clear error if no output device can be opened
+    splash.finish_splash(win)
     return app.exec()
 
 

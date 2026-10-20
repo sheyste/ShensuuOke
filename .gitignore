@@ -10,3 +10,4 @@ runtime/downloads/
 .env
 .env.*
 packaging/
+scratch/
