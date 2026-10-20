@@ -14,6 +14,8 @@ except Exception as _e:
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('app/resources', 'app/resources'), ('runtime/soundfonts/*.sf2', 'runtime/soundfonts')]
+if os.path.exists('.env'):
+    datas.append(('.env', '.'))
 binaries = [('runtime/ffmpeg/ffmpeg.exe', 'runtime/ffmpeg'), ('runtime/fluidsynth/*.dll', 'runtime/fluidsynth')]
 hiddenimports = []
 tmp_ret = collect_all('sounddevice')

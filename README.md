@@ -17,13 +17,9 @@ Includes a dual-screen karaoke display, synchronized lyric highlight engine, pho
 
 - **Karaoke View & Visuals**:
   - Synchronized, continuous syllable lyric coloring (smooth progressive fill).
-  - Clean song intro overlay displaying `#SongNumber` above the Title and Artist.
-  - Visual 4-second countdown badges (`[4] [3] [2] [1]`) before singing and long instrumental breaks.
   - Background video playback (MP4, MKV, AVI, WebM) with seamless looping.
-  - Full-screen support (`F11`) with responsive on-screen controls and quick **Menu** navigation.
 
 - **High-Performance Song Library**:
-  - Incremental lazy loading and infinite scrolling for instant page loading even with 50,000+ songs.
   - Instant debounced search across title, artist, filename, format, and path.
   - Stable 1-based karaoke song numbers for fast keypad selection.
   - Automated library folder watcher, duplicate detector, and clean-up for missing songs.

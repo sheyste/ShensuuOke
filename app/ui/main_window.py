@@ -1,9 +1,10 @@
 from __future__ import annotations
 import os
-from PySide6.QtCore import QByteArray, QTimer, Qt
+from PySide6.QtCore import QByteArray, QTimer, QUrl, Qt
 from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox,
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTabWidget, QVBoxLayout, QWidget)
-from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QPixmap, QShortcut
+from app.services.update_checker import UpdateCheckWorker
 from app.ui.equalizer_view import EqualizerView
 from app.ui.karaoke_window import KaraokeWindow
 from app.ui.lyrics_view import LyricsView
@@ -19,9 +20,10 @@ from app.version import __version__
 
 
 class HomePage(QWidget):
-    def __init__(self, db, ctl, go, open_karaoke=None):
+    def __init__(self, db, ctl, go, open_karaoke=None, on_check_update=None):
         super().__init__()
         self.db, self.ctl, self.go, self.open_karaoke = db, ctl, go, open_karaoke
+        self.on_check_update = on_check_update
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -62,6 +64,14 @@ class HomePage(QWidget):
         title_box.addWidget(self.stats)
         brand_row.addLayout(title_box)
         brand_row.addStretch(1)
+
+        if on_check_update:
+            self.update_btn = QPushButton("🔄 Check for Updates")
+            self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.update_btn.setStyleSheet("padding: 7px 16px; font-weight: 600; border-radius: 8px;")
+            self.update_btn.clicked.connect(on_check_update)
+            brand_row.addWidget(self.update_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         lay.addLayout(brand_row)
 
         # 2. Quick Navigation Buttons
@@ -223,7 +233,9 @@ class MainWindow(QMainWindow):
         self.side = QListWidget(); self.side.setObjectName("sidebar"); self.side.setFixedWidth(210)
         self.side.addItems(self.NAV)
         self.stack = QStackedWidget()
-        self.pages = [HomePage(db, ctl, self.side.setCurrentRow, open_karaoke=self._open_karaoke),
+        self.home_page = HomePage(db, ctl, self.side.setCurrentRow, open_karaoke=self._open_karaoke,
+                                  on_check_update=self._check_updates_manual)
+        self.pages = [self.home_page,
                       LibraryView(db, settings, ctl, "library"),
                       LibraryView(db, settings, ctl, "recent"), SoundFontManager(db, settings, ctl),
                       EqualizerView(db, settings, ctl), AudioSettingsView(db, settings, ctl),
@@ -296,6 +308,68 @@ class MainWindow(QMainWindow):
 
         # Default to karaoke view on startup
         self._open_karaoke_default()
+
+        # Check for updates in background on startup
+        self._startup_update_worker = None
+        QTimer.singleShot(3000, self._check_startup_updates)
+
+    def _check_startup_updates(self):
+        self._startup_update_worker = UpdateCheckWorker(repo="sheyste/ShensuuOke", parent=self)
+        self._startup_update_worker.finished_check.connect(self._on_startup_update_finished)
+        self._startup_update_worker.start()
+
+    def _on_startup_update_finished(self, res: dict):
+        # On startup, only prompt if there is actually an update; don't bother the user if up to date or network error
+        if res.get("has_update"):
+            self._on_manual_update_finished(res)
+
+    def _check_updates_manual(self):
+        if hasattr(self, "_manual_update_worker") and self._manual_update_worker and self._manual_update_worker.isRunning():
+            return
+        if hasattr(self.home_page, "update_btn"):
+            self.home_page.update_btn.setEnabled(False)
+            self.home_page.update_btn.setText("Checking…")
+        self.statusBar().showMessage("Checking GitHub for updates…", 4000)
+        self._manual_update_worker = UpdateCheckWorker(repo="sheyste/ShensuuOke", parent=self)
+        self._manual_update_worker.finished_check.connect(self._on_manual_update_finished)
+        self._manual_update_worker.start()
+
+    def _on_manual_update_finished(self, res: dict):
+        if hasattr(self.home_page, "update_btn"):
+            self.home_page.update_btn.setEnabled(True)
+            self.home_page.update_btn.setText("🔄 Check for Updates")
+
+        if res.get("error"):
+            self.statusBar().showMessage(f"Update check failed: {res['error']}", 6000)
+            QMessageBox.warning(self, "Update Check", f"Could not check for updates:\n{res['error']}")
+            return
+
+        if res.get("has_update"):
+            latest = res.get("latest_version")
+            curr = res.get("current_version")
+            url = res.get("download_url") or res.get("release_url")
+            body = res.get("body", "")
+            
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("ShensuuOke Update Available")
+            box.setText(f"<h3>A new release of ShensuuOke is available!</h3>"
+                        f"<b>Latest Version:</b> v{latest}<br/>"
+                        f"<b>Current Version:</b> v{curr}<br/>")
+            if body:
+                box.setDetailedText(body)
+            dl_btn = box.addButton("Download Update", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() == dl_btn and url:
+                QDesktopServices.openUrl(QUrl(url))
+        else:
+            QMessageBox.information(
+                self,
+                "Up to Date",
+                f"<h3>ShensuuOke is up to date!</h3>"
+                f"You are running the latest version: <b>v{__version__}</b>"
+            )
 
     def _nav(self, row):
         self.stack.setCurrentIndex(row)

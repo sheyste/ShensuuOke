@@ -7,3 +7,5 @@ dist/
 runtime/ffmpeg/ffmpeg.exe
 runtime/soundfonts/*.sf2
 runtime/downloads/
+.env
+.env.*
