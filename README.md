@@ -6,6 +6,13 @@ Includes a dual-screen karaoke display, synchronized lyric highlight engine, pho
 
 ---
 
+<img width="1920" height="998" alt="image" src="https://github.com/user-attachments/assets/38913a57-fdae-47cd-a991-0595976b2806" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0dcf3de2-edbd-4077-b810-57bc032a304b" />
+<img width="414" height="896" alt="IMG_2915" src="https://github.com/user-attachments/assets/d169873b-aca4-4b3b-9f42-08ee80485b10" />
+
+
+
+
 ## Key Features
 
 - **Audio & MIDI Synthesizer Engine**:
