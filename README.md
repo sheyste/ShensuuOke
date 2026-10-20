@@ -6,8 +6,8 @@ Includes a dual-screen karaoke display, synchronized lyric highlight engine, pho
 
 ---
 
-<img width="1920" height="998" alt="image" src="https://github.com/user-attachments/assets/38913a57-fdae-47cd-a991-0595976b2806" />
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0dcf3de2-edbd-4077-b810-57bc032a304b" />
+<img width="1920" height="1000" alt="{B28311FF-3457-4D0A-B8E6-2000E1C0A6B1}" src="https://github.com/user-attachments/assets/e0a61928-8b39-454f-90db-a9bc41f1e18a" />
+<img width="1920" height="1080" alt="{C9BA173C-EA49-4550-8213-704C3C8364D4}" src="https://github.com/user-attachments/assets/b76e310f-62b9-49a7-91f3-ac6b322cade2" />
 <img width="1551" height="904" alt="{EAD550CE-03B8-4099-A884-CC2BC066F109}" src="https://github.com/user-attachments/assets/9a6ae605-c7b1-4d98-b8bd-75fba39cb56e" />
 <img width="414" height="896" alt="IMG_2915" src="https://github.com/user-attachments/assets/d169873b-aca4-4b3b-9f42-08ee80485b10" />
 <img width="414" height="896" alt="IMG_2916" src="https://github.com/user-attachments/assets/25d4667a-32c3-41f9-8062-2b5640b0f36e" />
