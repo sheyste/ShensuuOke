@@ -311,7 +311,7 @@ class MainWindow(QMainWindow):
 
         # Check for updates in background on startup
         self._startup_update_worker = None
-        QTimer.singleShot(3000, self._check_startup_updates)
+        QTimer.singleShot(1500, self._check_startup_updates)
 
     def _check_startup_updates(self):
         self._startup_update_worker = UpdateCheckWorker(repo="sheyste/ShensuuOke", parent=self)
@@ -352,6 +352,7 @@ class MainWindow(QMainWindow):
             
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowFlags(box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
             box.setWindowTitle("ShensuuOke Update Available")
             box.setText(f"<h3>A new release of ShensuuOke is available!</h3>"
                         f"<b>Latest Version:</b> v{latest}<br/>"
@@ -360,6 +361,8 @@ class MainWindow(QMainWindow):
                 box.setDetailedText(body)
             dl_btn = box.addButton("Download Update", QMessageBox.ButtonRole.AcceptRole)
             box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+            box.raise_()
+            box.activateWindow()
             box.exec()
             if box.clickedButton() == dl_btn and url:
                 QDesktopServices.openUrl(QUrl(url))

@@ -224,6 +224,9 @@ class AppSettingsView(QWidget):
             QMessageBox.warning(self, "Background videos", "That folder does not exist.")
             return
         self.settings.set("karaoke_video_folder", path)
+        if path:
+            from app.services.video_optimizer import prewarm_background_folder
+            prewarm_background_folder(path)
         self.info.setText("Karaoke background video folder saved.")
 
     def _run(self, mode, paths):

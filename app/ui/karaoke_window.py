@@ -10,6 +10,11 @@ from PySide6.QtWidgets import (QGraphicsDropShadowEffect, QGraphicsScene, QGraph
                                QHBoxLayout, QLabel, QPushButton, QStackedLayout,
                                QVBoxLayout, QWidget)
 from app.audio.audio_decoder import find_ffmpeg
+from app.services.video_optimizer import (
+    get_cached_folder_videos,
+    get_playable_video_fast,
+    prewarm_background_folder,
+)
 from app.ui.lyrics_view import LyricsView
 from app.ui.remote_panel import RemotePanel
 
@@ -73,6 +78,9 @@ class KaraokeWindow(QWidget):
             self.video_player.setVideoOutput(self.video)
             self.video_player.mediaStatusChanged.connect(self._video_status)
             self.video_player.errorOccurred.connect(self._on_video_error)
+            bg_folder = settings.get("karaoke_video_folder") or ""
+            if bg_folder:
+                prewarm_background_folder(bg_folder)
 
         self.title = QLabel("")
         self.title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -175,55 +183,8 @@ class KaraokeWindow(QWidget):
         return fmt in ("MP4", "MKV", "AVI", "MOV", "WEBM", "VIDEO")
 
     def _ensure_playable_video(self, src_path: str) -> str:
-        """Ensure the video file uses a codec compatible with Qt's multimedia backend.
-
-        YouTube downloads and converted MP4s often use AV1 or VP9 video streams
-        that fail hardware decode on Windows without specific platform MFTs,
-        resulting in a black screen. When needed, this uses bundled FFmpeg to transcode
-        the video stream to universally-supported H.264 into a temporary cache.
-        """
-        if not src_path or not os.path.isfile(src_path):
-            return src_path
-        try:
-            ffmpeg_bin = find_ffmpeg()
-        except Exception:
-            return src_path
-
-        try:
-            probe = subprocess.run(
-                [ffmpeg_bin, "-i", src_path],
-                capture_output=True,
-                text=True,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                timeout=5
-            )
-            m = re.search(r"Stream #\d+:\d+.*?: Video: ([^,\s]+)", probe.stderr)
-            codec = (m.group(1).lower() if m else "")
-            # H.264 / AVC and VP8/VP9 are natively decoded; AV1 or exotic formats need fallback
-            if codec in ("h264", "avc1", "vp8", "vp9", "mjpeg"):
-                return src_path
-
-            stat = os.stat(src_path)
-            cache_key = hashlib.sha256(f"{os.path.abspath(src_path)}:{stat.st_mtime}:{stat.st_size}".encode()).hexdigest()[:16]
-            cache_dir = os.path.join(tempfile.gettempdir(), "shensuuoke_video_cache")
-            os.makedirs(cache_dir, exist_ok=True)
-            dst_path = os.path.join(cache_dir, f"{cache_key}.mp4")
-            if os.path.isfile(dst_path) and os.path.getsize(dst_path) > 0:
-                return dst_path
-
-            tmp_path = dst_path + ".tmp.mp4"
-            cmd = [
-                ffmpeg_bin, "-v", "error", "-y", "-i", src_path,
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-                "-pix_fmt", "yuv420p", "-c:a", "copy", tmp_path
-            ]
-            res = subprocess.run(cmd, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=60)
-            if res.returncode == 0 and os.path.isfile(tmp_path):
-                os.replace(tmp_path, dst_path)
-                return dst_path
-        except Exception:
-            pass
-        return src_path
+        """Ensure the video file uses a codec compatible with Qt's multimedia backend without blocking the GUI."""
+        return get_playable_video_fast(src_path, auto_transcode_async=True)
 
     def _play_song_video(self, song: dict):
         if not self.video_player or not self.video:
@@ -272,8 +233,7 @@ class KaraokeWindow(QWidget):
                 QTimer.singleShot(500, lambda: self._refresh_background_video(advance=True))
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
             if not self._is_song_video:
-                self.video_player.setPosition(0)
-                self.video_player.play()
+                self._refresh_background_video(advance=True)
             else:
                 self.video_player.pause()
 
@@ -473,27 +433,37 @@ class KaraokeWindow(QWidget):
         if not self.video_player or self._is_song_video:
             return
         folder = self.settings.get("karaoke_video_folder") or ""
-        extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
-        files = []
-        if os.path.isdir(folder):
-            files = [os.path.join(folder, name) for name in sorted(os.listdir(folder))
-                     if os.path.splitext(name)[1].lower() in extensions
-                     and os.path.isfile(os.path.join(folder, name))]
-        if files:
-            if advance or self._video_index < 0:
-                self._video_index = (self._video_index + 1) % len(files)
-            else:
-                self._video_index %= len(files)
-            if self.video:
-                self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
-            self.video_view.show()
-            video_file = self._ensure_playable_video(files[self._video_index])
-            self.video_player.setSource(QUrl.fromLocalFile(video_file))
-            self.video_player.play()
-            self.overlay.raise_()
-        else:
+        files = get_cached_folder_videos(folder)
+        if not files:
             self.video_player.stop()
             self.video_view.hide()
+            return
+
+        is_playing = (self.video_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
+
+        # If only 1 video exists and it is already playing, keep playing smoothly without restarting
+        if len(files) == 1 and is_playing:
+            return
+
+        if advance or self._video_index < 0:
+            self._video_index = (self._video_index + 1) % len(files)
+        else:
+            self._video_index %= len(files)
+
+        chosen_file = files[self._video_index]
+        video_file = get_playable_video_fast(chosen_file, auto_transcode_async=True)
+
+        url = QUrl.fromLocalFile(video_file)
+        if self.video_player.source() == url and is_playing:
+            return
+
+        if self.video:
+            self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatioByExpanding)
+        self.video_view.show()
+        if self.video_player.source() != url:
+            self.video_player.setSource(url)
+        self.video_player.play()
+        self.overlay.raise_()
 
     def _size(self, d):
         self.lyrics.set_font_size(self.lyrics.font_size + d); self.settings.set("karaoke_font_size", self.lyrics.font_size)
